@@ -127,28 +127,26 @@ db:exec[[
 ]]
 
 --[[
-  外部接口
-]]--
+  User related functions
+]]
+_users = {
+  checkUserExist = function (msg)
+    local select_str = string.format("SELECT 1 FROM %s WHERE id = '%s'",TABLES.users, msg.From)
+    local rows = {}
+    for row in db:nrows(select_str) do table.insert(rows,row) end
+    return #rows > 0
+  end
+}
 
+--[[
+  User related interface
+]]--
 Handlers.add(
   "register",
   Handlers.utils.hasMatchingTag("Action", "Register"),
   function (msg)
     xpcall(function (msg)
-      -- 检查用户是否注册
-      local registered = (function(msg)
-        local stmt = db:prepare [[
-          SELECT COUNT(*) FROM users WHERE id == :id;
-        ]]
-        stmt:bind_names({
-          id = msg.From
-        })
-        stmt:step()
-        local count = stmt:get_value(0)
-        stmt:reset()
-        return count > 0
-      end)(msg)
-      -- 未注册用户插入数据
+      local registered = _users.checkUserExist(msg)
       if not registered then
         local registe_result = (function ()
           local insert_stmt = db:prepare [[
@@ -166,7 +164,7 @@ Handlers.add(
           return result
         end)(msg)
         print("registe_result: ".. type(registe_result))
-        ao.send({Target=msg.From,Action="RegisterSucesssNotice",Data=msg.From.." has been registered at "..msg.Timestamp})
+        ao.send({Target=msg.From,Action="RegisterSucesssNotice",Data="Registered at "..msg.Timestamp})
       else
         error("User exists.")
       end
@@ -179,17 +177,11 @@ Handlers.add(
   Handlers.utils.hasMatchingTag("Action", "GetUserInfo"),
   function (msg)
     xpcall(function (msg)
-      local query_stmt = db:prepare [[
-          SELECT id, name, wallet_address, bets_count, bets_amount, total_rewards_count, total_rewards_amount, create_at FROM users WHERE id == :id LIMIT 1;
-        ]]
-      query_stmt:bind_names({
-        id = msg.From
-      })
+      local query_str = string.format("SELECT * FROM %s WHERE id == '%s' LIMIT 1",TABLES.users,msg.From)
       local rows = {}
-      for row in query_stmt:nrows() do
+      for row in db:nrows(query_str) do
           table.insert(rows, row)
       end
-      query_stmt:reset()
       if(#rows > 0) then
         local json = json or require("json")
         ao.send({Target=msg.From,Action="ReplyUserInfo",Data=json.encode(rows[#rows])})
@@ -205,22 +197,35 @@ Handlers.add(
   Handlers.utils.hasMatchingTag("Action", "SetUserInfo"),
   function (msg)
     xpcall(function (msg)
-      local query_stmt = db:prepare [[
-          SELECT id, name, wallet_address, bets_count, bets_amount, total_rewards_count, total_rewards_amount, create_at FROM users WHERE id == :id LIMIT 1;
-        ]]
-      query_stmt:bind_names({
-        id = msg.From
-      })
-      local rows = {}
-      for row in query_stmt:nrows() do
-          table.insert(rows, row)
-      end
-      query_stmt:reset()
-      if(#rows > 0) then
+      local is_user_exist = _users.checkUserExist(msg)
+      if is_user_exist then
         local json = json or require("json")
-        ao.send({Target=msg.From,Action="ReplyUserInfo",Data=json.encode(rows[#rows])})
+        local data = json.decode(msg.Data)
+        local name = msg.Name or data.Name
+        if not name then error("Missed Name value.") end
+        local update_str = string.format("UPDATE %s SET name = '%s',update_at = %d WHERE id = '%s'",TABLES.users,name,msg.Timestamp,msg.From)
+        local code = db:exec(update_str)
+        ao.send({Target=msg.From,Action="SetUserInfoSucess",Data=code>0 and "updated." or "nothing updated."})
       else
-        error("User not Exists.")
+        error("your process have not been registered.")
+      end
+    end,function(err) _utils.sendError(err,msg.From) end, msg)
+  end
+)
+
+Handlers.add(
+  "modifyUserAddress",
+  Handlers.utils.hasMatchingTag("Action", "ModifyUserAddress"),
+  function (msg)
+    xpcall(function (msg)
+      if not msg.Address then error("Missed Wallet Address tag.",1) end
+      local is_user_exist = _users.checkUserExist(msg)
+      if is_user_exist then
+        local update_str = string.format("UPDATE %s SET wallet_address = '%s',update_at = %d WHERE id = '%s'",TABLES.users,msg.Address,msg.Timestamp,msg.From)
+        db:exec(update_str)
+        ao.send({Target=msg.From,Action="ModifyAddressSucess",Data="The process has been transferred to "..msg.Address})
+      else
+        error("your process have not been registered.")
       end
     end,function(err) _utils.sendError(err,msg.From) end, msg)
   end
