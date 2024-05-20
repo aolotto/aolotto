@@ -138,8 +138,36 @@ _users = {
   end
 }
 
+_rounds = {
+  clone = function ()
+    xpcall(function ()
+      ao.spawn(ao._module,{
+        Name = "aolotto_round_dev",
+      })
+      print('进程已克隆')
+    end,function (err) print(err) end)
+  end,
+
+  init_process = function (process)
+    local code = string.format([[
+      Handlers.add(
+        "test",
+        Handlers.utils.hasMatchingTag("Action","Test"),
+        function(msg) 
+          ao.send({Target=msg.From,Action="Tested",Data="%s"}) 
+        end
+      )
+    ]],process)
+    ao.send({Target=process,Action="Eval",Data=code})
+  end
+}
+
+_bet = {
+
+}
+
 --[[
-  User related interface
+  User related interfaces for CLI
 ]]--
 Handlers.add(
   "register",
@@ -231,6 +259,37 @@ Handlers.add(
   end
 )
 
+
+Handlers.add(
+  "queryUserByAddress",
+  Handlers.utils.hasMatchingTag("Action", "QueryUserByAddress"),
+  function (msg)
+    xpcall(function (msg)
+      if not msg.Address then error("Missed Wallet Address tag.",1) end
+      local query_str = string.format("SELECT * FROM %s WHERE wallet_address == '%s' LIMIT 1",TABLES.users,msg.Address)
+      local rows = {}
+      for row in db:nrows(query_str) do
+          table.insert(rows, row)
+      end
+      if(#rows > 0) then
+        local json = json or require("json")
+        ao.send({Target=msg.From,Action="ReplyUserInfo",Data=json.encode(rows[#rows])})
+      else
+        error("User not Exists.")
+      end
+    end,function(err) _utils.sendError(err,msg.From) end, msg)
+  end
+)
+
+Handlers.add(
+  "bet",
+  Handlers.utils.hasMatchingTag("Action","Bet"),
+  function (msg, env)
+    local json = json or require("json")
+    ao.send({Target=msg.Round,Action="SaveBets",Data=json.encode({user_id="",bets={{number=123,amount=4},{number=345,amount=2}}})})
+  end
+)
+
 Handlers.add(
   "getLottoInfo",
   Handlers.utils.hasMatchingTag("Action", "GetLottoInfo"),
@@ -250,3 +309,28 @@ Handlers.add(
 )
 
 
+--[[
+  到账处理
+]]
+
+Handlers.add(
+  'CRED_Bet_Credit',
+  function (msg)
+    local CRED_PROCESS = CRED_PROCESS or "Sa0iBLPNyJQrwpTTG-tWLQU-1QeUAJA73DdxGGiKoJc"
+    if msg.From == CRED_PROCESS and msg.Tags.Action == "Credit-Notice" and msg.Tags["X-Bet"] then
+      return true
+    else
+      return false
+    end
+  end,
+  function (msg)
+    local current_round = {
+      no = 1,
+      process = "fumyny4G3nOTZLx7ATHTab9qryE9tNh7qA8IQyuROhY"
+    }
+    local num_str = msg.Tags["X-Bet"]
+    local quantity_str = msg.Quantity
+    local user = msg.Sender
+    ao.send({Target=user,Action="Bet-Notice",Data="成功下注第1轮抽奖:"..num_str})
+  end
+)
