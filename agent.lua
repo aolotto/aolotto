@@ -11,8 +11,6 @@ db = sqlite3.open_memory()
 db:exec[[
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
-    name TEXT, 
-    wallet_address TEXT,
     bets_count INTEGER,
     bets_amount INTEGER,
     rewards_balance INTEGER,
@@ -130,8 +128,8 @@ db:exec[[
   User related functions
 ]]
 _users = {
-  checkUserExist = function (msg)
-    local select_str = string.format("SELECT 1 FROM %s WHERE id = '%s'",TABLES.users, msg.From)
+  checkUserExist = function (id)
+    local select_str = string.format("SELECT 1 FROM %s WHERE id = '%s'",TABLES.users, id)
     local rows = {}
     for row in db:nrows(select_str) do table.insert(rows,row) end
     return #rows > 0
@@ -162,9 +160,6 @@ _rounds = {
   end
 }
 
-_bet = {
-
-}
 
 --[[
   User related interfaces for CLI
@@ -174,7 +169,7 @@ Handlers.add(
   Handlers.utils.hasMatchingTag("Action", "Register"),
   function (msg)
     xpcall(function (msg)
-      local registered = _users.checkUserExist(msg)
+      local registered = _users.checkUserExist(msg.From)
       if not registered then
         local registe_result = (function ()
           local insert_stmt = db:prepare [[
@@ -281,14 +276,7 @@ Handlers.add(
   end
 )
 
-Handlers.add(
-  "bet",
-  Handlers.utils.hasMatchingTag("Action","Bet"),
-  function (msg, env)
-    local json = json or require("json")
-    ao.send({Target=msg.Round,Action="SaveBets",Data=json.encode({user_id="",bets={{number=123,amount=4},{number=345,amount=2}}})})
-  end
-)
+
 
 Handlers.add(
   "getLottoInfo",
@@ -317,20 +305,72 @@ Handlers.add(
   'CRED_Bet_Credit',
   function (msg)
     local CRED_PROCESS = CRED_PROCESS or "Sa0iBLPNyJQrwpTTG-tWLQU-1QeUAJA73DdxGGiKoJc"
-    if msg.From == CRED_PROCESS and msg.Tags.Action == "Credit-Notice" and msg.Tags["X-Bet"] then
+    if msg.From == CRED_PROCESS and msg.Tags.Action == "Credit-Notice" then
       return true
     else
       return false
     end
   end,
   function (msg)
-    local current_round = {
-      no = 1,
-      process = "fumyny4G3nOTZLx7ATHTab9qryE9tNh7qA8IQyuROhY"
-    }
-    local num_str = msg.Tags["X-Bet"]
-    local quantity_str = msg.Quantity
-    local user = msg.Sender
-    ao.send({Target=user,Action="Bet-Notice",Data="成功下注第1轮抽奖:"..num_str})
+    xpcall(function (msg)
+      local round_no = CURRENT_ROUND or 1
+      local round_process = ROUNDS[CURRENT_ROUND] and ROUNDS[CURRENT_ROUND].process or "pgMXPlpSxmp2r6EqIRkpv0M1c7WlRZZm77CoEdUP1VA"
+      -- local numbers_str = msg.Tags["X-Numbers"]
+      local quantity_str = msg.Quantity or "1"
+      local num_table = _utils.convertCommandToNumbers(msg.Tags["X-Numbers"] or "")
+      local bets = {}
+      if #num_table == 0 then
+        local random_3 = _utils.getRandomNumber(msg.Timestamp,3)
+        table.insert(bets,{random_3,tonumber(quantity_str)})
+      else
+        bets = _utils.countBets(num_table,tonumber(quantity_str))
+      end
+      -- 更新用户数据
+      if _users.checkUserExist(msg.Sender) then
+        local update_stmt = string.format(
+          "UPDATE users SET bets_count = bets_count + 1 , bets_amount = bets_amount + %d, update_at = %d WHERE id = '%s'",
+          quantity_str,
+          msg.Timestamp,
+          msg.Sender
+        )
+        db:exec(update_stmt)
+      else
+        local insert_stmt = string.format(
+          [[
+            INSERT INTO users (id, bets_count,bets_amount,rewards_balance, total_rewards_count, total_rewards_amount,create_at,update_at)
+            VALUES ('%s', 1, %d, 0, 0, 0,%d,%d)
+          ]],
+          msg.Sender,
+          quantity_str,
+          msg.Timestamp,
+          msg.Timestamp
+        )
+        db:exec(insert_stmt)
+      end
+
+      -- 更新全局数据
+      ROUNDS[CURRENT_ROUND]['bets_count'] = ROUNDS[CURRENT_ROUND]['bets_count'] + 1
+      ROUNDS[CURRENT_ROUND]['bets_amount'] = ROUNDS[CURRENT_ROUND]['bets_amount'] + tonumber(quantity_str)
+      ROUNDS[CURRENT_ROUND]['prize'] = ROUNDS[CURRENT_ROUND]['prize'] + tonumber(quantity_str)
+
+      -- 发送消息给Round process
+      local json = json or require("json")
+      local tags = {
+        Target = round_process,
+        Action = "SaveNumbers",
+        Data = json.encode(bets),
+        User = msg.Sender,
+        Quantity = quantity_str,
+        Round = tostring(round_no),
+        ["Pushed-For"] = msg.Tags["Pushed-For"],
+        ["X-Numbers"] = msg.Tags["X-Numbers"]
+      }
+      if msg.Tags['X-Donee'] and msg.Tags['X-Donee'] ~= msg.Sender then
+        tags['Donee'] = msg.Tags['X-Donee']
+      end
+      ao.send(tags)
+    end,function(err) 
+      _utils.sendError(err,msg.Sender)
+    end, msg)
   end
 )
