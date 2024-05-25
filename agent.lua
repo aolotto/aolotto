@@ -136,6 +136,8 @@ _users = {
   end
 }
 
+
+
 _rounds = {
   clone = function ()
     xpcall(function ()
@@ -164,119 +166,6 @@ _rounds = {
 --[[
   User related interfaces for CLI
 ]]--
-Handlers.add(
-  "register",
-  Handlers.utils.hasMatchingTag("Action", "Register"),
-  function (msg)
-    xpcall(function (msg)
-      local registered = _users.checkUserExist(msg.From)
-      if not registered then
-        local registe_result = (function ()
-          local insert_stmt = db:prepare [[
-            INSERT INTO users (id, name, wallet_address, create_at)
-            VALUES (:id, :name, :wallet_address, :create_at)
-          ]]
-          insert_stmt:bind_names({
-            id = msg.From,
-            name = msg.Name or "",
-            wallet_address = msg.WalletAddress or msg.Owner,
-            create_at = msg.Timestamp
-          })
-          local result = insert_stmt:step()
-          insert_stmt:reset()
-          return result
-        end)(msg)
-        print("registe_result: ".. type(registe_result))
-        ao.send({Target=msg.From,Action="RegisterSucesssNotice",Data="Registered at "..msg.Timestamp})
-      else
-        error("User exists.")
-      end
-    end, function(err) _utils.sendError(err,msg.From) end, msg)
-  end
-)
-
-Handlers.add(
-  "getUserInfo",
-  Handlers.utils.hasMatchingTag("Action", "GetUserInfo"),
-  function (msg)
-    xpcall(function (msg)
-      local query_str = string.format("SELECT * FROM %s WHERE id == '%s' LIMIT 1",TABLES.users,msg.From)
-      local rows = {}
-      for row in db:nrows(query_str) do
-          table.insert(rows, row)
-      end
-      if(#rows > 0) then
-        local json = json or require("json")
-        ao.send({Target=msg.From,Action="ReplyUserInfo",Data=json.encode(rows[#rows])})
-      else
-        error("User not Exists.")
-      end
-    end,function(err) _utils.sendError(err,msg.From) end, msg)
-  end
-)
-
-Handlers.add(
-  "setUserInfo",
-  Handlers.utils.hasMatchingTag("Action", "SetUserInfo"),
-  function (msg)
-    xpcall(function (msg)
-      local is_user_exist = _users.checkUserExist(msg)
-      if is_user_exist then
-        local json = json or require("json")
-        local data = json.decode(msg.Data)
-        local name = msg.Name or data.Name
-        if not name then error("Missed Name value.") end
-        local update_str = string.format("UPDATE %s SET name = '%s',update_at = %d WHERE id = '%s'",TABLES.users,name,msg.Timestamp,msg.From)
-        local code = db:exec(update_str)
-        ao.send({Target=msg.From,Action="SetUserInfoSucess",Data=code>0 and "updated." or "nothing updated."})
-      else
-        error("your process have not been registered.")
-      end
-    end,function(err) _utils.sendError(err,msg.From) end, msg)
-  end
-)
-
-Handlers.add(
-  "modifyUserAddress",
-  Handlers.utils.hasMatchingTag("Action", "ModifyUserAddress"),
-  function (msg)
-    xpcall(function (msg)
-      if not msg.Address then error("Missed Wallet Address tag.",1) end
-      local is_user_exist = _users.checkUserExist(msg)
-      if is_user_exist then
-        local update_str = string.format("UPDATE %s SET wallet_address = '%s',update_at = %d WHERE id = '%s'",TABLES.users,msg.Address,msg.Timestamp,msg.From)
-        db:exec(update_str)
-        ao.send({Target=msg.From,Action="ModifyAddressSucess",Data="The process has been transferred to "..msg.Address})
-      else
-        error("your process have not been registered.")
-      end
-    end,function(err) _utils.sendError(err,msg.From) end, msg)
-  end
-)
-
-
-Handlers.add(
-  "queryUserByAddress",
-  Handlers.utils.hasMatchingTag("Action", "QueryUserByAddress"),
-  function (msg)
-    xpcall(function (msg)
-      if not msg.Address then error("Missed Wallet Address tag.",1) end
-      local query_str = string.format("SELECT * FROM %s WHERE wallet_address == '%s' LIMIT 1",TABLES.users,msg.Address)
-      local rows = {}
-      for row in db:nrows(query_str) do
-          table.insert(rows, row)
-      end
-      if(#rows > 0) then
-        local json = json or require("json")
-        ao.send({Target=msg.From,Action="ReplyUserInfo",Data=json.encode(rows[#rows])})
-      else
-        error("User not Exists.")
-      end
-    end,function(err) _utils.sendError(err,msg.From) end, msg)
-  end
-)
-
-
 
 Handlers.add(
   "getLottoInfo",
