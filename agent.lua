@@ -1,6 +1,16 @@
+CURRENT_ROUND = 1
+ROUNDS = {{
+    no = 1,
+    process = "pgMXPlpSxmp2r6EqIRkpv0M1c7WlRZZm77CoEdUP1VA",
+    bets_count = 0,
+    bets_amount = 0,
+    prize = 0,
+}}
+
 local sqlite3 = require("lsqlite3")
 local crypto = require(".crypto")
 local bint = require('.bint')(256)
+local utils = require(".utils")
 local _utils = _utils or require("./utils")
  
 db = sqlite3.open_memory()
@@ -124,6 +134,10 @@ db:exec[[
 
 ]]
 
+sendError = function (err,target)
+  ao.send({Target=target,Action="Error",Error=Dump(err),Data="400"})
+end
+
 --[[
   User related functions
 ]]
@@ -168,12 +182,22 @@ _rounds = {
 ]]--
 
 Handlers.add(
-  "getLottoInfo",
-  Handlers.utils.hasMatchingTag("Action", "GetLottoInfo"),
+  "getRoundInfo",
+  Handlers.utils.hasMatchingTag("Action", "GetRoundInfo"),
   function (msg)
-    print("GetLottoInfo - From -> "..msg.From)
-    print("GetLottoInfo - Action -> "..msg.Action)
-    print("GetLottoInfo - UserAddress -> "..msg.UserAddress)
+    local utils = utils or require(".utils")
+    local no = msg.Round or CURRENT_ROUND or 1
+    local target_round = utils.find(function (round) return round.no == no end)(ROUNDS)
+    if target_round then
+      local message = {
+        Target = target_round.process,
+        Action = "Info",
+        User = msg.From
+      }
+      ao.send(message)
+    else
+      ao.send({Target=msg.From,Data="The Round "..no.." has not started yet."})
+    end
   end
 )
 
@@ -259,7 +283,8 @@ Handlers.add(
       end
       ao.send(tags)
     end,function(err) 
-      _utils.sendError(err,msg.Sender)
+      sendError(err,msg.Sender)
     end, msg)
   end
 )
+

@@ -193,10 +193,10 @@ Handlers.add(
       -- 下发消息
       local data_str = ""
       if msg.Donee then
-        data_str = string.format("Placed %d bet%s for '%s' into aolotto Round %d , with the numbers: %s",
+        data_str = string.format("Placed %d bet%s for '%s' on aolotto Round %d , with the numbers: %s",
           msg.Quantity, tonumber(msg.Quantity)>1 and "s" or "" , msg.Donee , ROUND or msg.Round , msg.Data )
       else
-        data_str = string.format("Placed %d bet%s into aolotto Round %d , with the numbers: %s",
+        data_str = string.format("Placed %d bet%s on aolotto Round %d , with the numbers: %s",
           msg.Quantity , tonumber(msg.Quantity)>1 and "s" or "", ROUND or msg.Round , msg.Data )
       end
 

@@ -72,6 +72,7 @@ TABLES = {
 
 CURRENT_ROUND = 1
 ROUNDS = {{
+    
     process = "pgMXPlpSxmp2r6EqIRkpv0M1c7WlRZZm77CoEdUP1VA",
     bets_count = 0,
     bets_amount = 0,
