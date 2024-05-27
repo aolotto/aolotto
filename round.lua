@@ -1,5 +1,6 @@
 ROUND = 1
 AOLOTTO = "wqwklmuSqSPGaeMR7dHuciyvBDtt1UjmziAoWu-pKuI"
+SHOOTER = "7tiIWi2kR_H9hkDQHxy2ZqbOFVb58G4SgQ8wfZGKe9g:"
 _STATE  = {
   ended = nil,
   base_amount = 0,
@@ -10,6 +11,10 @@ _STATE  = {
 _CONST = {
   dur = 86400000
 }
+
+
+table.insert(ao.authorities,AOLOTTO)
+table.insert(ao.authorities,SHOOTER)
 
 Bets = {}
 Bet_logs = {}
@@ -29,9 +34,11 @@ saveBets = function(bets,msg)
   local user_bets_table = {}
   if Bets[bet_uid] then
     user_bets_table = Bets[bet_uid]
+  else
     local participants = _STATE.participants or 0
     _STATE.participants = participants + 1
   end
+ 
   local numbers = user_bets_table.numbers or {}
   local count = user_bets_table.count or 0
   for i, v in ipairs(bets) do
@@ -69,7 +76,7 @@ saveDonees = function (bets,msg)
   Bets[msg.User] = user_bets_table
 end
 
-endedThisRound = function (msg)
+endThisRound = function (msg)
   ao.send({Target=AOLOTTO,Action="Ended",Round=tostring(ROUND),Amount=tostring(_STATE.base_amount + _STATE.current_amount)})
   _STATE.ended = 1
   _STATE.end_time = msg.Timestamp
@@ -235,7 +242,7 @@ Handlers.add(
     if _STATE.current_amount < _STATE.base_amount then 
       return 
     end -- 参与金额小于基础金额不开奖
-    endedThisRound(msg)
+    endThisRound(msg)
   end
 )
 
@@ -258,7 +265,7 @@ Handlers.add(
       return 
     end -- 参与金额小于基础金额不开奖
     print("手工检查是否开奖")
-    endedThisRound(msg)
+    endThisRound(msg)
   end
 )
 
@@ -305,7 +312,7 @@ Handlers.add(
 
 Handlers.add(
   'fetchBets',
-  Handlers.utils.hasMatchingTag("Action","FetchBets"),
+  Handlers.utils.hasMatchingTag("Action","Bets"),
   function (msg)
     local json = json or require("json")
     local user_bets = Bets[msg.User or msg.From]
@@ -314,9 +321,9 @@ Handlers.add(
       Action = "ReplyUserBets",
     }
     if user_bets.numbers and table.pack(user_bets.numbers).n > 0 then
-      message.Data = string.format("You've placed %d bets into this Round: %s",table.pack(user_bets.numbers).n,json.encode(user_bets.numbers))
+      message.Data = string.format("You've bought %d bets on aolotto Round %d: %s",user_bets.count,ROUND,json.encode(user_bets.numbers))
     else
-      message.Data = string.format("You don't have any bets in aolotto Round %d.",ROUND)
+      message.Data = string.format("You don't have any bets on aolotto Round %d.",ROUND)
     end
     ao.send(message)
   end
