@@ -1,35 +1,22 @@
-ROUND = 1
-AOLOTTO = "wqwklmuSqSPGaeMR7dHuciyvBDtt1UjmziAoWu-pKuI"
-SHOOTER = "7tiIWi2kR_H9hkDQHxy2ZqbOFVb58G4SgQ8wfZGKe9g:"
-_STATE  = {
-  ended = nil,
-  base_amount = 0,
-  current_amount = 0,
-  start_time = 1716283202884,
-  participants = 0
-}
+ROUND = ao.env.Process.Tags["Round"]
+AOLOTTO = ao.env.Process.Tags["Agent"]
+SHOOTER = ao.env.Process.Tags["Shooter"]
 _CONST = {
-  dur = 86400000
+  dur = tonumber(ao.env.Process.Tags["Duration"]),
+  base_rewards = tonumber(ao.env.Process.Tags["BaseRewards"]),
+  start_time = tonumber(ao.env.Process.Tags["StartTime"])
 }
+ao.authorities = {AOLOTTO,SHOOTER}
 
+crypto = require(".crypto")
+json = require("json")
+utils = require(".utils")
 
-table.insert(ao.authorities,AOLOTTO)
-table.insert(ao.authorities,SHOOTER)
-
-Bets = {}
-Bet_logs = {}
-
-local crypto = require(".crypto")
-local bint = require('.bint')(256)
-local json = json or require("json")
-local utils = require(".utils")
-
-
-
-_utils = nil
 
 saveBets = function(bets,msg)
+  _STATE = _STATE or {}
   Bets = Bets or {}
+  Bet_logs = Bet_logs or {}
   local bet_uid = msg.Donee or msg.User
   local user_bets_table = {}
   if Bets[bet_uid] then
@@ -77,8 +64,9 @@ saveDonees = function (bets,msg)
 end
 
 endThisRound = function (msg)
-  ao.send({Target=AOLOTTO,Action="Ended",Round=tostring(ROUND),Amount=tostring(_STATE.base_amount + _STATE.current_amount)})
-  _STATE.ended = 1
+  _STATE = _STATE or {}
+  ao.send({Target=AOLOTTO,Action="Ended",Round=tostring(ROUND),Amount=tostring(_CONST.base_rewards + (_STATE.current_amount or 0))})
+  _STATE.ended = true
   _STATE.end_time = msg.Timestamp
 end
 
@@ -94,42 +82,35 @@ getRandomNumber = function (seed,len)
   return numbers
 end
 
-countWinners = function (win_nums)
+countWinners = function (win_nums,reserve)
+  _STATE = _STATE or {}
   local result = {}
-  local sum = 0
-  local per_reward = nil
+  local per_reward = 0
+  local totalBetsAmount = 0
   for key, value in pairs(Bets) do
       if value.numbers[win_nums] then
-          table.insert(result, {key, value.numbers[win_nums]})
+          table.insert(result, {
+            id = key,
+            amount = value.numbers[win_nums]
+          })
       end
   end
   if #result > 0 then
-    for i, v in ipairs(result) do
-      sum = sum + v[2]
-    end
-    per_reward = (_STATE.base_amount + _STATE.current_amount) * 0.5 / sum
-    for i, v in ipairs(result) do
-      v[3] = v[2] / sum
-      v[4] = v[2] * per_reward
-      v[5] = win_nums
-    end
+    local utils = utils or require(".utils")
+    totalBetsAmount = utils.reduce(function (acc, v) return acc + v end)(0)(utils.map(function (val) return val.amount end)(result))
+
+    per_reward = (_CONST.base_rewards + (_STATE.current_amount or 0) - tonumber(reserve)) / totalBetsAmount
+
+    utils.map(function (v, key)
+      v["percent"] = v.amount / totalBetsAmount
+      v["rewards"] = math.floor(v.amount * per_reward)
+      v["matched"] = win_nums
+    end,result)
   end
-  return result, sum, per_reward
+  return result, totalBetsAmount,per_reward
 end
 
-saveWinnersToAgent = function (winners,drawInfo)
-  local json = json or require("json")
-  local message = {
-    Target = AOLOTTO,
-    Action = "SaveWinners",
-    Data = json.encode({
-      round_no = ROUND,
-      winners = winners,
-      drawInfo = drawInfo
-    })
-  }
-  ao.send(message)
-end
+
 
 sendRewardNotice = function (winner)
   local data_str = string.format("Congrats! Your %d bets with number '%d' in aolotto Round %d have won %s CRED. Use ' Send({Target=AOLOTTO, Action='Claim'}) ' to claim the prize.",winner[2],winner[5],ROUND,tostring(winner[4]/100) )
@@ -150,6 +131,21 @@ sendDrawedNotice = function (participants)
     Data = "aolotto Round ".. tostring(ROUND).. " is ended, and the Round "..tostring(ROUND+1).." is alive ,just keep on!",
     Assignments = participants
   } -- 备注：无法发送消息
+  ao.send(message)
+end
+
+
+sendWinnersToAgent =  function (winners,drawInfo,reserve)
+  _STATE = _STATE or {}
+  local json = json or require("json")
+  local message = {
+    Target = AOLOTTO,
+    Action = "SaveWinners",
+    ["Winners"] = tostring(drawInfo.total_winners),
+    ["Winbets"] = tostring(drawInfo.total_win_bets),
+    ["Rewards"] = tostring(_CONST.base_rewards+(_STATE.current_amount or 0)-reserve),
+    Data=json.encode(winners)
+  }
   ao.send(message)
 end
 
@@ -196,7 +192,8 @@ Handlers.add(
         saveDonees(bets,msg)
       end
       -- 保存总金额
-      _STATE.current_amount = _STATE.current_amount + tonumber(msg.Quantity)
+      _STATE = _STATE or {}
+      _STATE.current_amount = (_STATE.current_amount or 0) + tonumber(msg.Quantity)
       -- 下发消息
       local data_str = ""
       if msg.Donee then
@@ -228,7 +225,8 @@ Handlers.add(
 Handlers.add(
   'autoStop',
   function (msg)
-    local SHOOTER = SHOOTER or "7tiIWi2kR_H9hkDQHxy2ZqbOFVb58G4SgQ8wfZGKe9g"
+    SHOOTER = SHOOTER or "7tiIWi2kR_H9hkDQHxy2ZqbOFVb58G4SgQ8wfZGKe9g"
+    _STATE = _STATE or {}
     if not _STATE.ended and msg.From == SHOOTER and msg.Tags.Action == "1m_shoot" then
       return true
     else
@@ -236,10 +234,10 @@ Handlers.add(
     end
   end,
   function (msg)
-    if msg.Timestamp < _STATE.start_time + _CONST.dur then 
+    if msg.Timestamp < _CONST.start_time + _CONST.dur then 
       return 
     end -- 不到时间不开奖
-    if _STATE.current_amount < _STATE.base_amount then 
+    if (_STATE.current_amount or 0) < _CONST.base_rewards then 
       return 
     end -- 参与金额小于基础金额不开奖
     endThisRound(msg)
@@ -249,6 +247,7 @@ Handlers.add(
 Handlers.add(
   'manualStop',
   function (msg)
+    _STATE = _STATE or {}
     if not _STATE.ended and msg.Tags.Action == "ManualStop" and ao.isTrusted(msg) then
       return true
     else
@@ -256,11 +255,12 @@ Handlers.add(
     end
   end,
   function (msg)
-    if msg.Timestamp < _STATE.start_time + _CONST.dur then 
+    _STATE = _STATE or {}
+    if msg.Timestamp < _CONST.start_time + _CONST.dur then 
       ao.send({Target=msg.From,Data="不到开奖时间"})
       return 
     end -- 不到时间不开奖
-    if _STATE.current_amount < _STATE.base_amount then 
+    if (_STATE.current_amount or 0) < _CONST.base_rewards then 
       ao.send({Target=msg.From,Data="参与金额小于基础金额"})
       return 
     end -- 参与金额小于基础金额不开奖
@@ -272,6 +272,7 @@ Handlers.add(
 Handlers.add(
   'draw',
   function (msg)
+    _STATE = _STATE or {}
     if _STATE.ended and msg.Tags.Action == "Draw" and ao.isTrusted(msg) then
       return true
     else
@@ -279,34 +280,25 @@ Handlers.add(
     end
   end,
   function (msg)
-    local seed = msg.Id..tostring(_STATE.current_amount) -- 基于msgId和当前参与者金额生成随机种子
+    assert(type(msg.ReserveToNextRound) == 'string', 'ReserveToNextRound is required!')
+    local reserve = tonumber(msg.ReserveToNextRound)
+    local seed = msg.Id..tostring(_STATE.current_amount or 0) -- 基于msgId和当前参与者金额生成随机种子
     local win_nums = getRandomNumber(seed,3) -- 生成3位随机数
     _STATE["win_nums"] = win_nums --保存获奖号码
-    local winners, total_qty, per_reward = countWinners(win_nums) -- 统计中奖者和中奖注数
+    print("Draw")
+    local winners, total_qty, per_reward = countWinners(win_nums,reserve) -- 统计中奖者和中奖注数
     Winners = winners --保存为全局状态
     DrawInfo = {
       round_no = ROUND,
-      process = ao.id,
       total_winners = #winners,
       total_win_bets = total_qty,
       per_bet_reward_amount = per_reward,
+      available_rewards = _CONST.base_rewards+(_STATE.current_amount or 0)-reserve,
+      rewards_reserve = reserve,
+      total_rewards = _CONST.base_rewards+(_STATE.current_amount or 0),
       draw_time = msg.Timestamp
     }
-    saveWinnersToAgent(winners,DrawInfo) -- 通知agent保存获奖信息
-    local utils = utils or require("utils")
-    
-    if #winners > 0 then
-      utils.map(function (winner) sendRewardNotice(winner) end, winners)
-    end -- 向winner下发中奖通知
-   
-    local participants = utils.keys(Bets)
-    sendDrawedNotice(participants)
-    -- utils.map(function (val, uid)
-    --   if not utils.includes(uid, winners or Winners) then
-    --     sendDrawedNotice(uid)
-    --   end
-    -- end,Bets)
-    -- 向未中奖参与者下发开奖通知
+    sendWinnersToAgent(Winners,DrawInfo,reserve) -- 通知agent保存获奖信息
   end
 )
 
@@ -333,14 +325,14 @@ Handlers.add(
   'fetchInfo',
   Handlers.utils.hasMatchingTag("Action","Info"),
   function (msg)
-
+    _STATE = _STATE or {}
     local state_str = _STATE.ended and "Ended" or "Ongoing"
-    local start_date_str = timestampToDate(_STATE.start_time,"%Y/%m/%d %H:%M")
-    local end_date_str = timestampToDate(_STATE.start_time+_CONST.dur,"%Y/%m/%d %H:%M")
-    local total_prize_str = tostring(_STATE.base_amount + _STATE.current_amount)
-    local participants_str = tostring(_STATE.participants)
-    local base_str = tostring(_STATE.base_amount)
-    local bets_str = tostring(_STATE.current_amount)
+    local start_date_str = timestampToDate(_CONST.start_time,"%Y/%m/%d %H:%M")
+    local end_date_str = timestampToDate(_CONST.start_time+_CONST.dur,"%Y/%m/%d %H:%M")
+    local total_prize_str = tostring(_CONST.base_rewards + (_STATE.current_amount or 0))
+    local participants_str = tostring(_STATE.participants or "")
+    local base_str = tostring(_CONST.base_rewards)
+    local bets_str = tostring(_STATE.current_amount or 0)
     local tips_str = _STATE.ended and string.format("Draw on %s, $d winners.",end_date_str,#Winners) or string.format("Draw on %s if bets >= %s",end_date_str,base_str)
 
     local str=  string.format([[
@@ -380,6 +372,3 @@ Handlers.add(
     end
   end
 )
-
-
-
