@@ -3,24 +3,25 @@
   Global constants and module imports
   *******************
 ]]--
-NAME = "aolotto"
-VERSION = "dev"
-CRED_PROCESS = "Sa0iBLPNyJQrwpTTG-tWLQU-1QeUAJA73DdxGGiKoJc"
-CURRENT_ROUND = 1
-ROUNDS = {{
+if not NAME then NAME = "aolotto" end
+if not VERSION then VERSION = "dev" end
+if not CRED_PROCESS then  CRED_PROCESS = "Sa0iBLPNyJQrwpTTG-tWLQU-1QeUAJA73DdxGGiKoJc" end
+if not CURRENT_ROUND then CURRENT_ROUND = 1 end
+if not ROUNDS then ROUNDS = {{
     no = 1,
     process = "pgMXPlpSxmp2r6EqIRkpv0M1c7WlRZZm77CoEdUP1VA",
     bets_count = 0,
     bets_amount = 0,
     prize = 0,
     base_awards = 0,
-}}
-SHOOTER = "7tiIWi2kR_H9hkDQHxy2ZqbOFVb58G4SgQ8wfZGKe9g"
+}} end
+
+if not SHOOTER then SHOOTER = "7tiIWi2kR_H9hkDQHxy2ZqbOFVb58G4SgQ8wfZGKe9g" end
 
 
-local sqlite3 = require("lsqlite3")
-local crypto = require(".crypto")
-local utils = require(".utils")
+sqlite3 = require("lsqlite3")
+crypto = require(".crypto")
+utils = require(".utils")
 
 
 
@@ -56,30 +57,15 @@ sendError = function (err,target)
   ao.send({Target=target,Action="Error",Error=Dump(err),Data="400"})
 end
 
--- Serialize table to string
-function table2string(t)
-  return string.format("%q", table.concat(t, ","))
-end
-
--- Deserialize string to table
-function string2table(s)
-  local t = {}
-  for num in string.gmatch(s, "%d+") do
-      table.insert(t, tonumber(num))
-  end
-  return t
-end
-
 -- Get the string of the user's participation round
 getParticipationRoundStr = function (str)
+  local json = json or require("json")
+  local tbl = str and json.decode(str) or {}
   local utils = utils or require(".utils")
-  local tbl = string2table(str)
   if not utils.includes(CURRENT_ROUND,tbl) then
     table.insert(tbl,CURRENT_ROUND)
-    return table2string(tbl)
-  else
-    return str
   end
+  return json.encode(tbl)
 end
 
 -- Get random numbers
@@ -173,7 +159,7 @@ end
 agentToTargetRound = function (msg,action)
   
   local utils = utils or require(".utils")
-  local no = msg.Round or CURRENT_ROUND or 1
+  local no = tonumber(msg.Round) or CURRENT_ROUND or 1
   local target_round = utils.find(function (round) return round.no == no end)(ROUNDS)
   if target_round then
     local message = {
@@ -283,9 +269,11 @@ end
 
 _rounds = {}
 
-_rounds.clone = function (msg)
+_rounds.clone = function (msg,target_round)
   xpcall(function (msg)
-    local base_rewards = math.floor((ROUNDS[CURRENT_ROUND].base_rewards + ROUNDS[CURRENT_ROUND].bets_amount)*0.5)
+    local utils = utils or require(".utils")
+    local target_round = utils.find(function (round) return round.no == CURRENT_ROUND end)(ROUNDS)
+    local base_rewards = math.floor((target_round.base_rewards + target_round.bets_amount)*0.5)
     local message = {
       Name = NAME.."_"..VERSION.."_"..tostring(CURRENT_ROUND+1),
       Data = "1234",
@@ -294,22 +282,43 @@ _rounds.clone = function (msg)
       ["Agent"] = ao.id,
       ["Shooter"] = SHOOTER,
       ["Duration"] = "86400000",
-      ["StartTime"] = msg.Timestamp
+      ["StartTime"] = tostring(msg.Timestamp)
     }
     print(message)
-    ao.spawn(ao._module,message)
+    Spawn(ao._module,message)
   end,function (err) return print(err) end,msg)
 end
 
-_rounds.initProcess = function (msg)
-  ao.send({
-    Target = msg.Process,
-    Action = "Eval",
-    Data = round_fn_code
-  })
+_rounds.initProcess = function (process,code)
+  xpcall(function (process,code)
+    print("初始化进程:"..process)
+    local result =  ao.send({
+      Target = process,
+      Action = "Eval",
+      Data = code or round_fn_code
+    })
+    local target = result.Target
+    print(target)
+    return "target"
+  end,function (err)
+    print(err)
+    return false
+  end,process,code)
 end
 
 
+_rounds.replaceTargetRound = function (data)
+  for index, value in ipairs(ROUNDS) do
+    if value.no == data.no then
+      ROUNDS[index] = data
+    end
+  end
+end
+
+_rounds.getTargetRound = function (no)
+  local utils = utils or require(".utils")
+  return utils.find(function (val) return val.no == no end,ROUNDS)
+end
 
 --[[
   *******************
@@ -343,15 +352,14 @@ Handlers.add(
   "getInfo",
   Handlers.utils.hasMatchingTag("Action", "Info"),
   function (msg)
-    local data_str = [[
-    aolotto is a lottery game built on theAoComputer, where you can buy bets 
-    with three numbers to win the AO's CRED tokens. The draw is held within 
-    24 hours.
-    -------------------------------------------------------------------------
-    * 当前进行轮次: 5
-    * 最大奖金额: 400 CRED 
-    * 累积参与用户: 3000
-  ]]
+    local data_str = string.format([[
+    aolotto, the first lottery game built on theAoComputer.
+    --------------------------------------------------------
+    * Current Round:                 %d
+    * Max Rewards:                   400 CRED 
+    * Total Participation:           3000
+    --------------------------------------------------------
+  ]],CURRENT_ROUND)
     local message = {
       Target = msg.From,
       Data = data_str
@@ -368,11 +376,11 @@ Handlers.add(
       local user = _users.queryUserInfo(msg.From)
       local data_str = "User not exists."
       if user then
-        data_str = "Your rewards balance is: "..(user.rewards_balance or 0)
+        data_str = string.format("Your rewards balance is: %.3f CRED",(user.rewards_balance/1000 or 0))
       end
       local msssage = {
         Target = msg.From,
-        Action = "ReplyRewardsBalance",
+        Action = "Reply-RewardsBalance",
         Balance = tostring(user and user.rewards_balance or 0),
         Data = data_str
       }
@@ -389,15 +397,29 @@ Handlers.add(
   function (msg)
     xpcall(function (msg)
       local user = _users.queryUserInfo(msg.From)
+      local request_type = msg.RequestType or ""
       local data_str = "User not exists."
       if user then
-        local json = json or require("json")
-        data_str = json.encode(user)
+        if request_type == "json" then
+          local json = json or require("json")
+          data_str = json.encode(user)
+        else
+          data_str = string.format([==[
+  %s
+  -------------------------------------------
+  * Number of Wins :   %d
+  * Rewards Balance :  %.3f CRED
+  * Total Rewards :    %.3f CRED
+  * Bets Amount :      %d
+  * Bets Placed :      %d
+  -------------------------------------------
+  Joined at %d
+          ]==],user.id, user.total_rewards_count, user.rewards_balance/1000, user.total_rewards_amount/1000, user.bets_amount,user.bets_count,user.create_at)
+        end  
       end
       local msssage = {
         Target = msg.From,
         Action = "ReplyUserInfo",
-        Balance = tostring(balance),
         Data = data_str
       }
       ao.send(msssage)
@@ -429,7 +451,7 @@ Handlers.add(
     xpcall(function (msg)
       local user = _users.queryUserInfo(msg.From)
       if user.rewards_balance and user.rewards_balance >= 100 then
-        local CRED_PROCESS = CRED_PROCESS or "Sa0iBLPNyJQrwpTTG-tWLQU-1QeUAJA73DdxGGiKoJc"
+        CRED_PROCESS = CRED_PROCESS or "Sa0iBLPNyJQrwpTTG-tWLQU-1QeUAJA73DdxGGiKoJc"
         local qty =  math.floor(user.rewards_balance * 0.9)
         local message = {
           Target = CRED_PROCESS,
@@ -466,38 +488,50 @@ Handlers.add(
     if msg.From == ao.id and msg.Tags.Action == "Spawned" then return true else return false end
   end,
   function (msg)
-    if msg.Tags["Round"] then
-      -- 初始化新进程的代码
-      _rounds.initProcess(msg)
-      -- 更新轮次信息
-      table.insert(ROUNDS,{
-        no = tonumber(msg.Tags["Round"]),
-        process = msg.Process,
-        base_rewards = tonumber(msg.Tags["BaseRewards"]),
-        bets_amount = 0,
-        bets_count = 0,
-        total_participant = 0
-      })
-      -- 切换定时触发器发送对象
-      ao.send({
-        Target = SHOOTER,
-        Action = "ChangeSubscriber",
-        Data = msg.Process
-      })
+    xpcall(function (msg)
+      if msg.Tags["Round"] then
+        print("新进程创建成功->"..msg.Process)
+        -- 初始化新进程的代码
+        -- _rounds.initProcess(msg.Process)
+        local init =  ao.send({
+          Target = msg.Process,
+          Action = "Eval",
+          Data = round_fn_code
+        })
 
-      -- 切换轮次
-      local last_round_no = CURRENT_ROUND
-      CURRENT_ROUND = tonumber(msg.Tags["Round"])
-
-      -- 触发上一轮次开奖
-      local last_round = utils.find(function (val) return val.no == last_round_no end,ROUNDS)
-
-      ao.send({
-        Target = last_round.process,
-        Action = "Draw",
-        ReserveToNextRound = msg.Tags["BaseRewards"]
-      })
-    end
+        -- 更新轮次信息
+        table.insert(ROUNDS,{
+          no = tonumber(msg.Tags["Round"]),
+          process = msg.Process,
+          base_rewards = tonumber(msg.Tags["BaseRewards"]),
+          bets_amount = 0,
+          bets_count = 0,
+          inited = init.Target == msg.Process
+        })
+        -- 切换定时触发器发送对象
+        ao.send({
+          Target = SHOOTER,
+          Action = "ChangeSubscriber",
+          Data = msg.Process
+        })
+  
+        -- 切换轮次
+        local last_round_no = CURRENT_ROUND
+        CURRENT_ROUND = tonumber(msg.Tags["Round"])
+  
+        -- 触发上一轮次开奖
+        local last_round = utils.find(function (val) return val.no == last_round_no end,ROUNDS)
+        print("触发上一轮次开奖->"..last_round.process)
+        print(last_round)
+        ao.send({
+          Target = last_round.process,
+          Action = "Draw",
+          ReserveToNextRound = tostring(msg.BaseRewards)
+        })
+      end
+    end,function (err)
+      print(err)
+    end,msg)
   end
 )
 
@@ -546,7 +580,7 @@ Handlers.add(
   function (msg)
     xpcall(function (msg)
       assert(type(msg.Quantity) == 'string', 'Quantity is required!')
-      local round_no = CURRENT_ROUND or 1
+      CURRENT_ROUND = CURRENT_ROUND or 1
       local numbers_str = msg.Tags["X-Numbers"] or getRandomNumber(msg.Id,3)
       -- local quantity_str = msg.Quantity or "1"
       local bet_tbl = parseStringToBets(numbers_str,tonumber(msg.Quantity))
@@ -572,23 +606,28 @@ Handlers.add(
         total_rewards_amount = userInfo.total_rewards_amount or 0,
         create_at = userInfo.create_at or msg.Timestamp,
         update_at = msg.Timestamp,
-        participation_rounds = userInfo.participation_rounds and getParticipationRoundStr(userInfo.participation_rounds) or tostring(CURRENT_ROUND)
+        participation_rounds = getParticipationRoundStr(userInfo.participation_rounds)
       }
       _users.replaceUserInfo(userInfo)
       -- 更新全局数据
-      ROUNDS[round_no]['bets_count'] = ROUNDS[round_no]['bets_count'] + 1
-      ROUNDS[round_no]['bets_amount'] = ROUNDS[round_no]['bets_amount'] + tonumber(msg.Quantity)
+      
+      local target_round = _rounds.getTargetRound(CURRENT_ROUND)
+      if target_round then
+        target_round.bets_count = target_round.bets_count + 1
+        target_round.bets_amount = target_round.bets_amount + tonumber(msg.Quantity)
+        _rounds.replaceTargetRound(target_round)
+      end
+      
 
       -- 发送消息给Round process
-      local round_process = ROUNDS[round_no] and ROUNDS[round_no].process or "pgMXPlpSxmp2r6EqIRkpv0M1c7WlRZZm77CoEdUP1VA"
       local json = json or require("json")
       local message = {
-        Target = round_process,
+        Target = target_round.process,
         Action = "SaveNumbers",
         Data = json.encode(bets),
         User = msg.Sender,
         Quantity = msg.Quantity,
-        Round = tostring(round_no),
+        Round = tostring(CURRENT_ROUND),
         ["Pushed-For"] = msg.Tags["Pushed-For"],
         ["X-Numbers"] = msg.Tags["X-Numbers"]
       }
@@ -607,11 +646,15 @@ Handlers.add(
   "_change",
   Handlers.utils.hasMatchingTag("Action","Ended"),
   function (msg)
-    local utils = utils or require(".utils")
-    local target_round = utils.find(function (round) return round.process == msg.From end)(ROUNDS)
-    if target_round.no == CURRENT_ROUND then
-      _rounds.clone()
-    end
+    xpcall(function (msg)
+      local utils = utils or require(".utils")
+      local target_round = utils.find(function (round) return round.process == msg.From end)(ROUNDS)
+      if target_round and target_round.no == CURRENT_ROUND then
+        _rounds.clone(msg)
+      end
+    end,function (err)
+      print(err)
+    end,msg)
   end
 )
 
@@ -650,10 +693,37 @@ Handlers.add(
 )
 
 Handlers.add(
+  "fetchRounds",
+  Handlers.utils.hasMatchingTag("Action","Rounds"),
+  function (msg)
+    local json = json or require("json")
+    local data_str = ""
+    local request_type = msg.RequestType or ""
+    if request_type == "json" then
+      data_str = json.encode(ROUNDS)
+    else
+      table.sort(ROUNDS,function (a,b) return a.no > b.no end)
+      for i, v in ipairs(ROUNDS) do
+        data_str = data_str..string.format("%4d : %s \n",v.no, v.process)
+      end
+    end
+    local msssage = {
+      Target = msg.From,
+      Action = "Reply-Rounds",
+      Data = data_str
+    }
+    ao.send(msssage)
+  end
+)
+
+Handlers.add(
   "_test",
   Handlers.utils.hasMatchingTag("Action","Test"),
   function (msg)
-    _rounds.clone(msg)
+    print("Test")
+    local a = _rounds.initProcess("k8pdBowde6n-E_ayphBIjZtcl-O2QXuFUnShId_iXQk")
+    print("a->")
+    print(Dump(a))
   end
 )
 

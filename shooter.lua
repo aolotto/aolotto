@@ -1,6 +1,6 @@
-pause = false
-subscriber = "pgMXPlpSxmp2r6EqIRkpv0M1c7WlRZZm77CoEdUP1VA"
-AOLOTTO = "wqwklmuSqSPGaeMR7dHuciyvBDtt1UjmziAoWu-pKuI"
+if not pause then pause = false end
+if not subscriber then subscriber = "pgMXPlpSxmp2r6EqIRkpv0M1c7WlRZZm77CoEdUP1VA" end
+if not AOLOTTO then AOLOTTO = "wqwklmuSqSPGaeMR7dHuciyvBDtt1UjmziAoWu-pKuI" end
 
 
 Handlers.add(
@@ -8,7 +8,7 @@ Handlers.add(
   Handlers.utils.hasMatchingTag("Action", "Cron"),
   function (msg)
     if subscriber and pause == false then
-      local short_time = tostring(msg.Timestamp)
+      print("cron->"..short_time)
       ao.send({
         Target = subscriber,
         Action = "1m_shoot",
