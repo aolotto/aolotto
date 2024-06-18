@@ -195,11 +195,6 @@ Handlers.add(
       -- 保存总金额
       _STATE.current_amount = (_STATE.current_amount or 0) + tonumber(msg.Quantity)
 
-      -- 检查是否可以结束轮次
-      if msg.Timestamp >= (_CONST.start_time + _CONST.dur) and _STATE.current_amount >= _CONST.base_rewards then 
-        endThisRound(msg)
-      end
-
       -- 下发消息
       local data_str = ""
       if msg.Donee then
@@ -230,82 +225,45 @@ Handlers.add(
 )
 
 Handlers.add(
-  'autoStop',
-  function (msg)
-    SHOOTER = SHOOTER or "7tiIWi2kR_H9hkDQHxy2ZqbOFVb58G4SgQ8wfZGKe9g"
-    if not _STATE.ended and msg.From == SHOOTER and msg.Tags.Action == "1m_shoot" then
-      return true
-    else
-      return false
-    end
-  end,
-  function (msg)
-    if msg.Timestamp < _CONST.start_time + _CONST.dur then 
-      return 
-    end -- 不到时间不开奖
-    if (_STATE.current_amount or 0) < _CONST.base_rewards then 
-      return 
-    end -- 参与金额小于基础金额不开奖
-    endThisRound(msg)
-  end
-)
-
-Handlers.add(
-  'manualStop',
-  function (msg)
-    if not _STATE.ended and msg.Tags.Action == "ManualStop" and ao.isTrusted(msg) then
-      return true
-    else
-      return false
-    end
-  end,
-  function (msg)
-    if msg.Timestamp < _CONST.start_time + _CONST.dur then 
-      ao.send({Target=msg.From,Data="不到开奖时间"})
-      return 
-    end -- 不到时间不开奖
-    if (_STATE.current_amount or 0) < _CONST.base_rewards then 
-      ao.send({Target=msg.From,Data="参与金额小于基础金额"})
-      return 
-    end -- 参与金额小于基础金额不开奖
-    endThisRound(msg)
-  end
-)
-
-Handlers.add(
   'draw',
   function (msg)
-    if _STATE.ended and msg.Tags.Action == "Draw" and ao.isTrusted(msg) then
+    if msg.Tags.Action == "Draw" and ao.isTrusted(msg) then
       return true
     else
       return false
     end
   end,
   function (msg)
-    assert(type(msg.ReserveToNextRound) == 'string', 'ReserveToNextRound is required!')
-    local reserve = tonumber(msg.ReserveToNextRound)
-    local seed = msg.Id..tostring(_STATE.current_amount or 0) -- 基于msgId和当前参与者金额生成随机种子
-    local win_nums = getRandomNumber(seed,3) -- 生成3位随机数
-    _STATE["win_nums"] = win_nums --保存获奖号码
-    print("Draw")
-    local winners, total_qty, per_reward = countWinners(win_nums,reserve) -- 统计中奖者和中奖注数
-    Winners = winners --保存为全局状态
-    DrawInfo = {
-      round_no = ROUND,
-      total_winners = #winners,
-      total_win_bets = total_qty,
-      per_bet_reward_amount = per_reward,
-      available_rewards = _CONST.base_rewards+(_STATE.current_amount or 0)-reserve,
-      rewards_reserve = reserve,
-      total_rewards = _CONST.base_rewards+(_STATE.current_amount or 0),
-      draw_time = msg.Timestamp
-    }
-    sendWinnersToAgent(Winners,DrawInfo,reserve) -- 通知agent保存获奖信息
-    if #Winners > 0 then
-      for i, winner in ipairs(Winners) do
-        sendRewardNotice(winner)
+    xpcall(function (msg)
+      assert(type(msg.ReserveToNextRound) == 'string', 'ReserveToNextRound is required!')
+      assert(_STATE.drawn == nil or _STATE.drawn == false,"this round has been drawn.")
+      local reserve = tonumber(msg.ReserveToNextRound)
+      local seed = msg.Id..tostring(_STATE.current_amount or 0) -- 基于msgId和当前参与者金额生成随机种子
+      local win_nums = getRandomNumber(seed,3) -- 生成3位随机数
+      _STATE["win_nums"] = win_nums --保存获奖号码
+      _STATE.ended = true
+      _STATE.end_time = msg.Timestamp
+      local winners, total_qty, per_reward = countWinners(win_nums,reserve) -- 统计中奖者和中奖注数
+      Winners = winners --保存为全局状态
+      DrawInfo = {
+        round_no = ROUND,
+        total_winners = #winners,
+        total_win_bets = total_qty,
+        per_bet_reward_amount = per_reward,
+        available_rewards = _CONST.base_rewards+(_STATE.current_amount or 0)-reserve,
+        rewards_reserve = reserve,
+        total_rewards = _CONST.base_rewards+(_STATE.current_amount or 0),
+        draw_time = msg.Timestamp
+      }
+      sendWinnersToAgent(Winners,DrawInfo,reserve) -- 通知agent保存获奖信息
+      if #Winners > 0 then
+        for i, winner in ipairs(Winners) do
+          sendRewardNotice(winner)
+        end
       end
-    end
+    end,function (err)
+      print(err)
+    end,msg)
   end
 )
 
@@ -414,7 +372,6 @@ Handlers.add(
         Winners = tostring(#Winners),
         Data = data_str
       }
-      
       ao.send(message)
     end
   end

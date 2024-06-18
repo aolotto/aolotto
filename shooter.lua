@@ -7,15 +7,21 @@ Handlers.add(
   "CronTick",
   Handlers.utils.hasMatchingTag("Action", "Cron"),
   function (msg)
-    if subscriber and pause == false then
-      print("cron->"..short_time)
-      ao.send({
-        Target = subscriber,
-        Action = "1m_shoot",
-        ShootTime = short_time,
-        Data = short_time,
-      })
-    end
+    ao.send({
+      Target = AOLOTTO,
+      Action = "Shoot"
+    })
+    -- if subscriber and pause == false then
+      
+    --   print("cron->"..short_time)
+    --   local short_time = msg.Timestamp
+    --   ao.send({
+    --     Target = subscriber,
+    --     Action = "1m_shoot",
+    --     ShootTime = short_time,
+    --     Data = short_time,
+    --   })
+    -- end
   end
 )
 
@@ -61,3 +67,5 @@ Handlers.add(
     pause = false
   end
 )
+
+
