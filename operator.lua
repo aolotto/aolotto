@@ -1,6 +1,6 @@
 utils = require(".utils")
 json = require("json")
-if not AGENT then AGENT = "s99ng3N0O4xgOV35xSNsVOv5nto4KMddSp7NfQBdnLE" end
+if not AGENT then AGENT = "PYit0XUH1X9GlCWGDg7AIDmHhiRQLziMng0BkRfVe4Q" end
 
 if not ALT then ALT = {data={}} end
 ao.authorities = {AGENT,ao.id}

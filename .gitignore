@@ -3,3 +3,4 @@ test.lua
 process
 .vscode
 *.backup
+.DS_Store

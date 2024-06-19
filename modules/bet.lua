@@ -15,8 +15,9 @@ function bet:save(bets,msg)
   for i, v in ipairs(bets) do
     local num = v[1]
     local qty = v[2]
-    local cur_qty = numbers[v[1]] or 0
-    numbers[num] = cur_qty + qty
+    numbers[tostring(num)] = (numbers[tostring(num)] or 0) + qty
+    self.statistics = self.statistics or {}
+    self.statistics[tostring(num)] = (self.statistics[tostring(num)] or 0) + qty
   end
   user_bets_table['numbers'] = numbers
   user_bets_table['count'] = msg.Donee and count or count + 1
@@ -45,6 +46,7 @@ function bet:archive(no)
   }
   self.logs = {}
   self.bets = {}
+  self.statistics = {}
   return archive
 end
 

@@ -1,0 +1,5 @@
+aolotto-test-0x3455 : PYit0XUH1X9GlCWGDg7AIDmHhiRQLziMng0BkRfVe4Q
+
+shooter : otRo8Pnn3kJzw49Mj7xxA7Jt9LLmIj7QpqK5SXSA4SQ
+
+archiver : MmIMz7OK893PDr5tYQyHPBEWZxQiyNwUBPBRLWQib1I
