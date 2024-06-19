@@ -1,6 +1,7 @@
 wallet.json
 test.lua
-process
+processes.txt
 .vscode
 *.backup
 .DS_Store
+*.txt
