@@ -1,6 +1,7 @@
 local json = json or require("json")
 local utils = utils or require(".utils")
 local crypto  = crypto or require(".crypto")
+local const = require("modules.const")
 
 local tools = {}
 
@@ -130,6 +131,21 @@ end
 function tools:toBalanceValue(v)
   local precision = TOKEN.Denomination or 3
   return string.format("%." .. precision .. "f", v / 10^precision)
+end
+
+function tools:messageToBets(msg)
+  local numbers_str = msg.Tags[const.Actions.x_numbers] or self:getRandomNumber(msg.Id..tostring(msg.Timestamp),3)
+  local bet_num_tbl = self:parseStringToBets(numbers_str,tonumber(msg.Quantity))
+  if not bet_num_tbl then
+    local key = self:getRandomNumber(msg.Id,3)
+    bet_num_tbl = {}
+    bet_num_tbl[key] = tonumber(msg.Quantity)
+  end
+  local bets = {}
+  for key, value in pairs(bet_num_tbl) do
+    table.insert(bets,{key,value})
+  end
+  return bets
 end
 
 return tools

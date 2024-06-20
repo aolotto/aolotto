@@ -14,7 +14,7 @@ function rounds:create(no,timestamp)
       bets_count = 0,
       start_time = timestamp,
       status = 0,
-      duration = ROUND_DUR
+      duration = self.duration or 86400000
     }
     self.current = tonumber(key)
     if pre then

@@ -21,7 +21,10 @@ Const.Actions = {
   refund = "Refund",
   x_amount = "X-Amount",
   x_tax = "X-Tax",
-  x_pushed_for = "X-Pushed-For"
+  x_pushed_for = "X-Pushed-For",
+  x_numbers = "X-Numbers",
+  request_type = "RequestType",
+  rounds = "Rounds"
 }
 
 Const.RoundStatus = {
