@@ -19,11 +19,6 @@ if not ARCHIVER then ARCHIVER = "MmIMz7OK893PDr5tYQyHPBEWZxQiyNwUBPBRLWQib1I" en
 if not ROUND_DUR then ROUND_DUR = 86400000 end
 if not CURRENT_ROUND then CURRENT_ROUND = 1 end
 
-if not utils.includes(OPERATOR, ao.authorities) then table.insert(ao.authorities,OPERATOR) end
-if not utils.includes(SHOOTER, ao.authorities) then table.insert(ao.authorities,SHOOTER) end
-if not utils.includes(ao.id, ao.authorities) then table.insert(ao.authorities,ao.id) end
-if not utils.includes(ARCHIVER, ao.authorities) then table.insert(ao.authorities,ARCHIVER) end
-
 
 --[[
   *******************
@@ -86,6 +81,12 @@ setmetatable(TOOLS,{__index=require("modules.tools")})
 if not USERS then USERS = { db_name ="users" } end
 setmetatable(USERS,{__index=require("modules.users")})
 
+--[[
+  归档暂存
+]]
+if not ARCHIVE then ARCHIVE = {} end
+setmetatable(ARCHIVE,{__index={}})
+
 
 --[[ 投注接口 ]]
 
@@ -129,10 +130,10 @@ Handlers.add(
       
       -- 更新用户数据
       local user = USERS:queryUserInfo(msg.Sender) or {}
-      if not user.id then
-        -- 添加Sender到信任列表
-        table.insert(ao.authorities,msg.Sender)
-      end
+      -- if not user.id then
+      --   -- 添加Sender到信任列表
+      --   table.insert(ao.authorities,msg.Sender)
+      -- end
       local userInfo = {
         id = msg.Sender,
         bets_count = user.bets_count and user.bets_count + 1 or 1,
@@ -225,7 +226,7 @@ Handlers.add(
       local archive = BET:archive(no)
       local draw_info, rewards = ROUNDS:draw(archive,msg.Timestamp)
       archive.draw_info = draw_info
-      _archive[tostring(no)] = archive
+      ARCHIVE[tostring(no)] = archive
 
       -- 处理抽奖结果
       if draw_info.winners and #draw_info.winners>0 then
@@ -257,7 +258,7 @@ Handlers.add(
   end,
   function (msg)
     ROUNDS[msg.Tags.Round].process = msg.From
-    _archive[msg.Tags.Round] = nil
+    ARCHIVE[msg.Tags.Round] = nil
   end
 )
 
