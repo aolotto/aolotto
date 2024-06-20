@@ -52,7 +52,7 @@ if not STATE then STATE = {
   total_pool_balance = 0,
   operator_balance = 0,
   total_pool_balance = 0,
-  tax_rete = 0.05,
+  tax_rete = 0.1,
   total_withdraw = {},
   total_claim_paid = 0
 } end
@@ -66,7 +66,7 @@ setmetatable(BET,{__index=require("modules.bet")})
 --[[
   轮次
 ]]
-if not ROUNDS then ROUNDS = {} end
+if not ROUNDS then ROUNDS = {repo={},current=1} end
 setmetatable(ROUNDS,{__index=require("modules.rounds")})
 
 --[[
@@ -84,8 +84,8 @@ setmetatable(USERS,{__index=require("modules.users")})
 --[[
   归档暂存
 ]]
-if not ARCHIVE then ARCHIVE = {} end
-setmetatable(ARCHIVE,{__index={}})
+if not ARCHIVES then ARCHIVES = {archiver = ARCHIVER} end
+setmetatable(ARCHIVES,{__index={}})
 
 
 --[[ 投注接口 ]]
@@ -106,8 +106,8 @@ Handlers.add(
       if STATE.run ~= 1 then ROUNDS:refundToken(msg) end
       assert(STATE.run  == 1, string.format("Aolotto is not accepting bets %s.",STATE.run == 0 and "now" or "forever"))
       assert(msg.Sender ~= OPERATOR, "Operator is not available on betting")
-      if not ROUNDS[tostring(CURRENT_ROUND or 1)] then
-        ROUNDS:create(tostring(CURRENT_ROUND or 1),msg.Timestamp)
+      if not ROUNDS:get("1") then
+        ROUNDS:create("1",msg.Timestamp)
       end
       CURRENT_ROUND = CURRENT_ROUND or 1
       local numbers_str = msg.Tags["X-Numbers"] or TOOLS:getRandomNumber(msg.Id,3)
@@ -148,11 +148,11 @@ Handlers.add(
       USERS:replaceUserInfo(userInfo)
       -- 更新全局数据
       
-      local target_round = ROUNDS[tostring(CURRENT_ROUND)]
+      local target_round = ROUNDS:get(ROUNDS.current)
       if target_round then
         target_round.bets_count = target_round.bets_count + 1
         target_round.bets_amount = target_round.bets_amount + tonumber(msg.Quantity)
-        ROUNDS:set(tostring(CURRENT_ROUND),target_round)
+        ROUNDS:set(ROUNDS.current,target_round)
       end
       
 
@@ -160,10 +160,10 @@ Handlers.add(
       local data_str = ""
       if msg.Donee then
         data_str = string.format("Placed %d bet%s for '%s' on aolotto Round %d , with the numbers: %s",
-          msg.Quantity, tonumber(msg.Quantity)>1 and "s" or "" , msg.Donee , CURRENT_ROUND , json.encode(bets) )
+          msg.Quantity, tonumber(msg.Quantity)>1 and "s" or "" , msg.Donee , ROUNDS.current , json.encode(bets) )
       else
         data_str = string.format("Placed %d bet%s on aolotto Round %d , with the numbers: %s",
-          msg.Quantity , tonumber(msg.Quantity)>1 and "s" or "", CURRENT_ROUND , json.encode(bets) )
+          msg.Quantity , tonumber(msg.Quantity)>1 and "s" or "", ROUNDS.current , json.encode(bets) )
       end
 
 
@@ -172,9 +172,8 @@ Handlers.add(
         Action = const.Actions.lotto_notice,
         Data = data_str,
         Quantity = msg.Quantity,
-        Round = tostring(CURRENT_ROUND),
+        Round = tostring(ROUNDS.current),
         Token = msg.From,
-        ["aolotto"] = ao.id,
         ["Pushed-For"] = msg.Tags["Pushed-For"],
         ["X-Numbers"] = msg.Tags["X-Numbers"]
       }
@@ -212,8 +211,8 @@ Handlers.add(
   function (msg)
     xpcall(function (msg)
       
-      local no = msg.Round and tonumber(msg.Round) or CURRENT_ROUND
-      local round = ROUNDS[tostring(no)]
+      local no = msg.Round and tonumber(msg.Round) or ROUNDS.current
+      local round = ROUNDS:get(no)
 
       assert(round.drawn == nil or round.drawn == false,"The round has been drawn.")
       assert(round.status == 0,"The round has been finished.")
@@ -226,7 +225,6 @@ Handlers.add(
       local archive = BET:archive(no)
       local draw_info, rewards = ROUNDS:draw(archive,msg.Timestamp)
       archive.draw_info = draw_info
-      ARCHIVE[tostring(no)] = archive
 
       -- 处理抽奖结果
       if draw_info.winners and #draw_info.winners>0 then
@@ -235,13 +233,7 @@ Handlers.add(
         USERS:shareRewardsToAll(rewards,msg.Timestamp)
       end
       -- 把轮次归档发送给运营者
-      local message = {
-        Target= ARCHIVER,
-        Action= const.Actions.archive_round,
-        Round = tostring(no),
-        Data= json.encode(archive)
-      }
-      ao.send(message)
+      ARCHIVES:add(no,archive)
     end,function (err)
       print(err)
       TOOLS:sendError(err,msg.From)
@@ -257,8 +249,8 @@ Handlers.add(
     if msg.From == ARCHIVER and msg.Tags.Action == const.Actions.round_archived and msg.Tags.Round then return true else return false end
   end,
   function (msg)
-    ROUNDS[msg.Tags.Round].process = msg.From
-    ARCHIVE[msg.Tags.Round] = nil
+    ROUNDS.repo[msg.Tags.Round].process = msg.From
+    ARCHIVES:remove(msg.Tags.Round)
   end
 )
 
@@ -272,8 +264,8 @@ Handlers.add(
   function (msg)
     xpcall(function (msg)
       local request_type = msg.RequestType or ""
-      local key = msg.Round or tostring(CURRENT_ROUND)
-      local round = ROUNDS[key]
+      local key = msg.Round or tostring(ROUNDS.current)
+      local round = ROUNDS:get(key)
       assert(round ~= nil,"The round did not exists")
       local str = ""
       if request_type == "json" then
@@ -324,9 +316,9 @@ Handlers.add(
   Handlers.utils.hasMatchingTag("Action",const.Actions.bets),
   function (msg)
     xpcall(function (msg)
-      local key = msg.Round or tostring(CURRENT_ROUND)
-      local is_current_round = key == tostring(CURRENT_ROUND) 
-      local round = ROUNDS[key]
+      local key = msg.Round or tostring(ROUNDS.current)
+      local is_current_round = key == tostring(ROUNDS.current) 
+      local round = ROUNDS:get(key)
       assert(round ~= nil, "The round is not exists")
       assert(is_current_round == false and round.process ~= nil,"The round you target has not been ready for query, please wait for minutes.")
       
@@ -343,9 +335,9 @@ Handlers.add(
             total_bets = total_bets +value
             bets_str = bets_str .. string.format(" %03d *%5d ",key,value) .. (total_numbers % 4 == 0 and "\n"..string.rep("-", 58).."\n" or " | ")
           end
-          data_str = string.format([[You've placed %d bets that cover %d numbers on Round %d : ]],total_bets,total_numbers,CURRENT_ROUND)..bets_str
+          data_str = string.format([[You've placed %d bets that cover %d numbers on Round %d : ]],total_bets,total_numbers,ROUNDS.current)..bets_str
         else
-          data_str = string.format("You don't have any bets on aolotto Round %d.",CURRENT_ROUND)
+          data_str = string.format("You don't have any bets on aolotto Round %d.",ROUNDS.current)
         end
         local message = {
           Target = msg.From,
@@ -426,16 +418,16 @@ Handlers.add(
       local err_str = string.format("Rewards balance is below the claim threshold of %s %s.",TOOLS:toBalanceValue(100),TOKEN.Ticker)
       assert(user.rewards_balance and user.rewards_balance >= 100,err_str)
       local TOKEN_PROCESS = TOKEN.Process or "Sa0iBLPNyJQrwpTTG-tWLQU-1QeUAJA73DdxGGiKoJc"
-      local qty =  math.floor(user.rewards_balance * ((1-TAX_RATE) or 0.05))
+      local qty =  math.floor(user.rewards_balance * ((1-TAX_RATE) or 0.9))
       local message = {
         Target = TOKEN_PROCESS,
         Action = "Transfer",
         Recipient = msg.From,
         Quantity = tostring(qty),
         [const.Actions.x_transfer_type] = const.Actions.claim,
-        ["X-Amount"] = tostring(user.rewards_balance),
-        ["X-Tax"] = tostring(TAX_RATE),
-        ["X-Pushed-For"] = msg["Pushed-For"]
+        [const.Actions.x_amount] = tostring(user.rewards_balance),
+        [const.Actions.x_tax] = tostring(TAX_RATE),
+        [const.Actions.x_pushed_for] = msg["Pushed-For"]
       }
       ao.send(message)
     end,function (err)
@@ -490,7 +482,7 @@ Handlers.add(
           Recipient = msg.From,
           Action = "Transfer",
           [const.Actions.x_transfer_type] = const.Actions.OP_withdraw,
-          ["X-Pushed-For"] = msg["Pushed-For"]
+          [const.Actions.x_pushed_for] = msg["Pushed-For"]
         }
         ao.send(message)
       else
@@ -618,7 +610,7 @@ Handlers.add(
     if msg.From == SHOOTER and msg.Action == const.Actions.shoot then return true else return false end
   end,
   function (msg)
-    local round = ROUNDS[tostring(CURRENT_ROUND)]
+    local round = ROUNDS:get()
     assert(msg.Timestamp >= round.start_time + round.duration, "Time not reached." )
     local expired = (round.start_time or 0) + (round.duration*7)
     if expired or round.bets_amount >= round.base_rewards then
@@ -640,10 +632,10 @@ Handlers.add(
     local data_str = ""
     local request_type = msg.RequestType or ""
     if request_type == "json" then
-      data_str = json.encode(ROUNDS)
+      data_str = json.encode(ROUNDS.repo)
     else
-      table.sort(ROUNDS,function (a,b) return a.no > b.no end)
-      for i, v in ipairs(ROUNDS) do
+      table.sort(ROUNDS.repo,function (a,b) return a.no > b.no end)
+      for i, v in ipairs(ROUNDS.repo) do
         data_str = data_str..string.format("%4d : %s \n",v.no, v.process)
       end
     end

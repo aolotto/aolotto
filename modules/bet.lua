@@ -7,8 +7,9 @@ function bet:save(bets,msg)
   if self.bets[uid] then
     user_bets_table = self.bets[uid]
   else
-    local participants = ROUNDS[tostring(CURRENT_ROUND)].participants or 0
-    ROUNDS[tostring(CURRENT_ROUND)].participants = participants + 1
+    local round = ROUNDS:get(tostring(CURRENT_ROUND))
+    local participants = round.participants or 0
+    ROUNDS.repo[tostring(CURRENT_ROUND)].participants = participants + 1
   end
   local numbers = user_bets_table.numbers or {}
   local count = user_bets_table.count or 0
@@ -41,7 +42,7 @@ function bet:archive(no)
   local archive = {
     logs = self.logs,
     bets = self.bets,
-    round = ROUNDS[tostring(no)],
+    round = ROUNDS.repo[tostring(no)],
     no = no
   }
   self.logs = {}

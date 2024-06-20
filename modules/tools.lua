@@ -103,8 +103,8 @@ end
 
 function tools:getParticipationRoundStr (str)
   local tbl = str and json.decode(str) or {}
-  if not utils.includes(CURRENT_ROUND,tbl) then
-    table.insert(tbl,CURRENT_ROUND)
+  if not utils.includes(ROUNDS.current,tbl) then
+    table.insert(tbl,ROUNDS.current)
   end
   return json.encode(tbl)
 end

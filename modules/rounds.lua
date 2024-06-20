@@ -1,10 +1,14 @@
+local utils = require(".utils")
+local tools = require("modules.tools")
+local const = require("modules.const")
 local rounds = {}
 function rounds:create(no,timestamp)
-  if not self[no] then
-    local pre = tonumber(no) > 1 and self[tostring(tonumber(no)-1)] or nil
+  local key = no and tostring(no) or tostring(self.current)
+  if not self.repo[key] then
+    local pre = tonumber(key) > 1 and self.repo[tostring(tonumber(key)-1)] or nil
     local base_rewards = pre and math.floor((pre.base_rewards + pre.bets_amount)*0.5) or 0
-    self[no] = {
-      no = no,
+    self.repo[key] = {
+      no = key,
       base_rewards = base_rewards,
       bets_amount = 0,
       bets_count = 0,
@@ -12,25 +16,35 @@ function rounds:create(no,timestamp)
       status = 0,
       duration = ROUND_DUR
     }
+    self.current = tonumber(key)
     if pre then
       pre.end_time = timestamp
       pre.status = timestamp <= pre.start_time+(pre.duration*7) and 1 or -1
+      self.repo[pre.no] = pre
     end
   end
-  return self[no]
+  return self.repo[key]
 end
 
 function rounds:set(no,data)
-  self[no] = data
+  if #self.repo > 0  then
+    local key  = no and tostring(no) or tostring(self.current)
+    self.repo[key] = data
+  end
 end
 
 function rounds:get(no)
-  return self[no]
+  if #self.repo > 0 then
+    local key  = no and tostring(no) or tostring(self.current)
+    return self.repo[key]
+  else
+    return
+  end
 end
 
 function rounds:draw(archive,timestamp)
   local no = tostring(archive.round.no)
-  local round = archive.round
+  local round = archive.round or self.repo[no]
   local rewards = math.floor((round.base_rewards + round.bets_amount)*0.5)
   -- 构建抽奖结果表
   local draw_info = {}
@@ -40,7 +54,7 @@ function rounds:draw(archive,timestamp)
   draw_info.rewards = rewards
   -- 获取随机抽奖号
   local seed = string.format("seed_%s_%d_%d_%d",no,timestamp,round.bets_amount,round.bets_count)
-  local win_num = TOOLS:getRandomNumber(seed,3)
+  local win_num = tools:getRandomNumber(seed,3)
   draw_info.win_num = win_num
   -- 统计获奖者
   local winners = {}
@@ -55,7 +69,6 @@ function rounds:draw(archive,timestamp)
   draw_info.winners = winners
   -- 统计获奖者的奖金比例
   if #winners > 0 then
-    local utils = utils or require(".utils")
     local total = utils.reduce(function (acc, v) return acc + v end)(0)(utils.map(function (val) return val.amount end)(winners))
     local per = math.floor(rewards/total)
     draw_info.total_win_bets = total
@@ -69,11 +82,11 @@ function rounds:draw(archive,timestamp)
     draw_info.total_win_bets = 0
   end
   -- 更改轮次状态
-  self[no].drawn = true
-  self[no].winners_count = #winners
-  self[no].total_win_bets = draw_info.total_win_bets or 0
-  self[no].win_num = win_num
-  self[no].status = 1
+  self.repo[no].drawn = true
+  self.repo[no].winners_count = #winners
+  self.repo[no].total_win_bets = draw_info.total_win_bets or 0
+  self.repo[no].win_num = win_num
+  self.repo[no].status = 1
   -- 增加奖金锁定
   return draw_info, rewards
 end
@@ -87,9 +100,14 @@ function rounds:refundToken(msg)
     Action = "Transfer",
     Recipient = msg.Sender,
     Quantity = msg.Quantity,
-    [CONST.Actions.x_transfer_type] = "Refund"
+    [const.Actions.x_transfer_type] = const.Actions.refund
   }
   ao.send(message)
+end
+
+function rounds:get(no)
+  local key = no~=nil and tostring(no) or tostring(self.current)
+  return self.repo[key]
 end
 
 return rounds

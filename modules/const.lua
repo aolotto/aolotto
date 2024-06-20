@@ -17,7 +17,11 @@ Const.Actions = {
   change_archiver = "ChangeArchiver",
   round_archived = "Round-Archived",
   pause_round = "Pause-Round",
-  round_restart = "Restart-Round"
+  round_restart = "Restart-Round",
+  refund = "Refund",
+  x_amount = "X-Amount",
+  x_tax = "X-Tax",
+  x_pushed_for = "X-Pushed-For"
 }
 
 Const.RoundStatus = {
