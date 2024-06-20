@@ -175,7 +175,6 @@ Handlers.add(
       end
       ao.send(message)
 
-   
       -- 触发轮次结束
      
       if target_round.bets_amount >= target_round.base_rewards and msg.Timestamp >= (target_round.start_time + target_round.duration or ROUNDS.duration) then
@@ -531,7 +530,7 @@ Handlers.add(
 )
 
 Handlers.add(
-  "OP.changeShooter",
+  "OP.changeArchiver",
   function(msg)
     if msg.From == OPERATOR and msg.Tags.Action == const.Actions.change_archiver then return true else return false end
   end,
