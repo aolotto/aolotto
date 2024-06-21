@@ -1,5 +1,6 @@
+local _config = require("_config")
 if not pause then pause = false end
-if not AOLOTTO then AOLOTTO = "PYit0XUH1X9GlCWGDg7AIDmHhiRQLziMng0BkRfVe4Q" end
+if not AOLOTTO then AOLOTTO = _config.AGENT end
 
 if not CONST then CONST = require("modules.const") end
 

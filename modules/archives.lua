@@ -1,4 +1,4 @@
-local const = require("const")
+local const = require("modules.const")
 local json = require("json")
 local Archives = {} 
 
@@ -16,3 +16,5 @@ end
 function Archives:remove(no)
   self[tostring(no)] = nil
 end
+
+return Archives

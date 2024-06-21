@@ -1,0 +1,2 @@
+Handlers.authOperater = function(msg)
+

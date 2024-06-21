@@ -3,27 +3,35 @@ local tools = require("modules.tools")
 local const = require("modules.const")
 local rounds = {}
 function rounds:create(no,timestamp)
-  local key = no and tostring(no) or tostring(self.current)
-  if not self.repo[key] then
-    local pre = tonumber(key) > 1 and self.repo[tostring(tonumber(key)-1)] or nil
-    local base_rewards = pre and math.floor((pre.base_rewards + pre.bets_amount)*0.5) or 0
-    self.repo[key] = {
-      no = key,
-      base_rewards = base_rewards,
-      bets_amount = 0,
-      bets_count = 0,
-      start_time = timestamp,
-      status = 0,
-      duration = self.duration or 86400000
-    }
-    self.current = tonumber(key)
-    if pre then
-      pre.end_time = timestamp
-      pre.status = timestamp <= pre.start_time+(pre.duration*7) and 1 or -1
-      self.repo[pre.no] = pre
-    end
+  local pre = tonumber(no) > 1 and self.repo[tostring(tonumber(no)-1)] or nil
+  local expired = false
+
+  if pre then
+    expired = timestamp >= pre.start_time+(pre.duration*7)
+    self.repo[pre.no].end_time = timestamp
+    self.repo[pre.no].status = expired and -1 or 1
   end
-  return self.repo[key]
+
+  local base_rewards = 0
+  if expired then
+    base_rewards = pre.base_rewards
+  else
+    base_rewards = pre and math.floor((pre.bets_amount+pre.base_rewards)*0.5) or 0
+  end
+
+  self.repo[tostring(no)] = {
+    no = tostring(no),
+    base_rewards = base_rewards,
+    bets_amount = 0,
+    bets_count = 0,
+    start_time = timestamp,
+    status = 0,
+    duration = self.duration or 86400000,
+    participants = 0
+  }
+  self.current = tonumber(no)
+
+  return self.repo[tostring(no)]
 end
 
 function rounds:set(no,data)
@@ -43,8 +51,8 @@ function rounds:get(no)
 end
 
 function rounds:draw(archive,timestamp)
-  local no = tostring(archive.round.no)
-  local round = archive.round or self.repo[no]
+  local no = tostring(archive.no)
+  local round = self.repo[no]
   local rewards = math.floor((round.base_rewards + round.bets_amount)*0.5)
   -- 构建抽奖结果表
   local draw_info = {}

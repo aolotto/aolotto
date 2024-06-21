@@ -5,13 +5,6 @@ function bet:save(bets,msg)
   local user_bets_table = {}
   self.bets = self.bets or {}
   local user_bets_table = self.bets[uid] or {}
-  -- if self.bets[uid] then
-  --   user_bets_table = self.bets[uid]
-  -- else
-  --   local round = ROUNDS:get()
-  --   local participants = round.participants or 0
-  --   ROUNDS.repo[round.no].participants = participants + 1
-  -- end
   local numbers = user_bets_table.numbers or {}
   local count = user_bets_table.count or 0
   for i, v in ipairs(bets) do
@@ -39,24 +32,16 @@ function bet:save(bets,msg)
 
 end
 
--- function bet:log(bets,msg)
---   self.logs = self.logs or {}
---   local log = {
---     ['Timestamp'] = msg.Timestamp,
---     ['User'] = msg.Sender,
---     ['Bets'] = bets,
---     ['Donee'] = msg.Donee or nil,
---     ['Quantity'] = msg.Quantity,
---     ['Id'] = msg.Id
---   }
---   table.insert(self.logs,log)
--- end
+function bet:isParticipated(msg)
+  self.bets = self.bets or {}
+  if self.bets[msg.Donee or msg.Sender]~=nil then return true else return false end
+end
 
-function bet:archive(no,round)
+function bet:archive(no)
   local archive = {
     logs = self.logs,
     bets = self.bets,
-    round = round,
+    statistics = self.statistics,
     no = no
   }
   self.logs = {}

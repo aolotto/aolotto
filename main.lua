@@ -3,6 +3,7 @@
   Global constants and module imports
   *******************
 ]]--
+local _config = require("_config")
 local const = require("modules.const")
 local utils = require(".utils")
 local crypto = require(".crypto")
@@ -18,11 +19,9 @@ if not TOKEN then TOKEN = {
   Denomination=3,
   Name="AolottoToken"
 } end
-if not SHOOTER then SHOOTER =  "7tiIWi2kR_H9hkDQHxy2ZqbOFVb58G4SgQ8wfZGKe9g" end
-if not OPERATOR then OPERATOR =  "-_hz5V_I73bHVHqKSJF_B6cDBBSn8z8nPEUGcViTYko" end
-if not ARCHIVER then ARCHIVER = "MmIMz7OK893PDr5tYQyHPBEWZxQiyNwUBPBRLWQib1I" end
-
-
+if not SHOOTER then SHOOTER = _config.SHOOTER or "7tiIWi2kR_H9hkDQHxy2ZqbOFVb58G4SgQ8wfZGKe9g" end
+if not OPERATOR then OPERATOR = _config.OPERATOR or "-_hz5V_I73bHVHqKSJF_B6cDBBSn8z8nPEUGcViTYko" end
+if not ARCHIVER then ARCHIVER = _config.ARCHIVER or "MmIMz7OK893PDr5tYQyHPBEWZxQiyNwUBPBRLWQib1I" end
 
 --[[
   *******************
@@ -64,7 +63,7 @@ setmetatable(STATE,{__index=require("modules.state")})
 --[[
   投注统计
 ]] --
-if not BET then BET = {} end
+if not BET then BET = {bets={},logs={}} end
 setmetatable(BET,{__index=require("modules.bet")})
 
 --[[
@@ -89,10 +88,19 @@ setmetatable(USERS,{__index=require("modules.users")})
   归档暂存
 ]]
 if not ARCHIVES then ARCHIVES = {archiver = ARCHIVER} end
-setmetatable(ARCHIVES,{__index={}})
+setmetatable(ARCHIVES,{__index=require("modules.archives")})
+
+
+--[[
+  退款记录
+]]
+if not REFUNDS then REFUNDS = {logs={}} end
+setmetatable(REFUNDS,{__index=require("modules.refund")})
 
 
 --[[ 投注接口 ]]
+
+
 
 Handlers.add(
   '_credit_bet',
@@ -113,7 +121,7 @@ Handlers.add(
       if not ROUNDS:get("1") then ROUNDS:create("1",msg.Timestamp) end
 
       -- 判断是否为当前轮次的新参与者
-      local participated = BET.bets[msg.Donee or msg.Sender]
+      local participated = BET:isParticipated(msg)
       -- 消息转换为投注
       local bets = TOOLS:messageToBets(msg)
 
@@ -140,7 +148,7 @@ Handlers.add(
       if target_round then
         target_round.bets_count = target_round.bets_count + 1
         target_round.bets_amount = target_round.bets_amount + tonumber(msg.Quantity)
-        target_round.participants = participated and  target_round.participants or (target_round.participants + 1)
+        target_round.participants = (target_round.participants or 0) + (participated and 0 or 1)
         ROUNDS:set(ROUNDS.current,target_round)
       end
 
@@ -191,6 +199,7 @@ Handlers.add(
 
 --[[ 结束轮次 ]]
 
+
 Handlers.add(
   "_finish",
   function (msg)
@@ -202,32 +211,41 @@ Handlers.add(
       
       local no = msg.Round and tonumber(msg.Round) or ROUNDS.current
       local round = ROUNDS:get(no)
+      local expired = (round.start_time or 0) + (round.duration*7)
 
       assert(round.drawn == nil or round.drawn == false,"The round has been drawn.")
       assert(round.status == 0,"The round has been finished.")
-      local expired = (round.start_time or 0) + (round.duration*7)
       assert(msg.Timestamp >= round.start_time+round.duration and msg.Timestamp < expired,"Time has not yet reached.")
       assert(round.bets_amount>=round.base_rewards and msg.Timestamp < expired, "The betting amount has not reached.")
+      -- 归档
       ROUNDS:create(tostring(no+1),msg.Timestamp)
-      -- 开奖
-      local archive = BET:archive(no,round)
-      local draw_info, rewards = ROUNDS:draw(archive,msg.Timestamp)
-      archive.draw_info = draw_info
+      local archive = BET:archive(no)
 
-      -- 处理抽奖结果
-      if draw_info.winners and #draw_info.winners>0 then
-        USERS:shareRewardsToWinners(draw_info.winners,msg.Timestamp)
+      if not expired then
+        -- 开奖
+        local draw_info, rewards = ROUNDS:draw(archive,msg.Timestamp)
+        archive.draw_info = draw_info
+        -- 处理抽奖结果
+        if draw_info.winners and #draw_info.winners>0 then
+          USERS:shareRewardsToWinners(draw_info.winners,msg.Timestamp)
+        else
+          USERS:shareRewardsToAll(rewards,msg.Timestamp)
+        end
       else
-        USERS:shareRewardsToAll(rewards,msg.Timestamp)
+        REFUNDS:refundToParticipantInBets(archive.bets,TOKEN.process)
       end
-      -- 把轮次归档发送给运营者
+      
+      -- 把轮次归档发送给归档程序
       ARCHIVES:add(no,archive)
+
     end,function (err)
       print(err)
       TOOLS:sendError(err,msg.From)
     end,msg)
   end
 )
+
+
 
 --[[ 更新轮次归档器 ]]
 
@@ -455,8 +473,8 @@ Handlers.add(
 -- [[ 运营方提现 ]]
 Handlers.add(
   "OP.withdraw",
-  function (msg)
-    if msg.From == OPERATOR and msg.Tags.Action == const.Actions.OP_withdraw then return true else return false end
+  function(msg) 
+    if msg.From == OPERATOR and msg.Action == const.Actions.OP_withdraw then return true else return false end
   end,
   function (msg)
     xpcall(function (msg)

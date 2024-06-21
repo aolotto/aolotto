@@ -5,3 +5,5 @@ processes.txt
 *.backup
 .DS_Store
 *.txt
+node_modules
+.env*

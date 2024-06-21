@@ -135,6 +135,7 @@ end
 
 function tools:messageToBets(msg)
   local numbers_str = msg.Tags[const.Actions.x_numbers] or self:getRandomNumber(msg.Id..tostring(msg.Timestamp),3)
+  print(numbers_str)
   local bet_num_tbl = self:parseStringToBets(numbers_str,tonumber(msg.Quantity))
   if not bet_num_tbl then
     local key = self:getRandomNumber(msg.Id,3)

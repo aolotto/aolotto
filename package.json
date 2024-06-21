@@ -1,0 +1,19 @@
+{
+	"name": "aolotto",
+	"version": "1.0.0",
+	"description": "aolotto deploy cli",
+	"main": "deploy/main.js",
+	"type": "module",
+	"scripts": {
+		"init_processes": "node deploy/main.js",
+		"AGENT": "aos dWGjeOLSGAu7kL8WaIljV9brKwn9AktNXvFnSTZcZf8 --wallet wallet.json",
+		"SHOOTER": "aos NldSVHqaY1okNcPsU0WiACRXHZdjiww_Gvi6XKtAN0c --wallet wallet.json",
+		"ARCHIVER": "aos FWVPLsVkXHdQQJ_h5-PSHO5kBaBdj7Gt8d1xFk8c_ko --wallet wallet.json",
+		"OPERATOR": "aos nzRrGYyfjc14hpfaVoXnHxFBW71i8DhPPSyvSjVwYhU --wallet wallet.json"
+	},
+	"author": "yeshua.ar",
+	"license": "ISC",
+	"dependencies": {
+		"@permaweb/aoconnect": "^0.0.56"
+	}
+}

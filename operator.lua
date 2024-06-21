@@ -1,6 +1,7 @@
 utils = require(".utils")
+local _config = require("_config")
 json = require("json")
-if not AGENT then AGENT = "PYit0XUH1X9GlCWGDg7AIDmHhiRQLziMng0BkRfVe4Q" end
+if not AGENT then AGENT = _config.AGENT end
 
 if not ALT then ALT = {data={}} end
 ao.authorities = {AGENT,ao.id}

@@ -1,7 +1,8 @@
 local const = require("modules.const")
+local _config = require("_config")
 local utils = require(".utils")
 local json = require("json")
-if not AGENT then  AGENT = "PYit0XUH1X9GlCWGDg7AIDmHhiRQLziMng0BkRfVe4Q" end
+if not AGENT then  AGENT = _config.AGENT end
 if not utils.includes(AGENT, ao.authorities) then table.insert(ao.authorities,AGENT) end
 
 
