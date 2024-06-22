@@ -9,7 +9,7 @@ function users:checkUserExist(id)
 end
 
 function users:queryUserRewardsBalance(id)
-  if not id then return end
+  assert(id~=nil,"missed id")
   local sql = string.format("SELECT rewards_balance FROM %s WHERE id = '%s'",self.db_name, id)
   local rows = {}
   for row in db:nrows(sql) do
@@ -23,7 +23,7 @@ function users:queryUserRewardsBalance(id)
 end
 
 function users:queryUserInfo(id)
-  if not id then return end
+  assert(id~=nil,"missed id")
   local sql = string.format("SELECT * FROM %s WHERE id = '%s'",self.db_name, id)
   local rows = {}
   for row in db:nrows(sql) do
@@ -61,7 +61,7 @@ function users:queryAllusers()
   return rows
 end
 
-function users:shareRewardsToAll (rewards,timestamp)
+function users:increaseAllRewardBalance (rewards,timestamp)
   local all = self:countUserTotalBetsAmount()
   local per_share = rewards/all
   local sql = string.format("UPDATE %s SET rewards_balance = rewards_balance + bets_amount * %.3f,total_rewards_amount = total_rewards_amount + bets_amount * %.3f, total_shared_count=total_shared_count+1, update_at = %d",self.db_name,per_share,per_share,timestamp)
@@ -69,7 +69,7 @@ function users:shareRewardsToAll (rewards,timestamp)
 end
 
 
-function users:shareRewardsToWinners (winners,timestamp)
+function users:increaseWinnersRewardBalance (winners,timestamp)
   utils.map(function (val, key)
     local sql = string.format("UPDATE %s SET rewards_balance = rewards_balance + %.3f , total_rewards_amount = total_rewards_amount + %.3f, total_rewards_count = total_rewards_count + 1, update_at = %d WHERE id == '%s'",self.db_name,val.rewards,val.rewards,timestamp,val.id)
     db:exec(sql)

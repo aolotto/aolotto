@@ -24,7 +24,9 @@ Const.Actions = {
   x_pushed_for = "X-Pushed-For",
   x_numbers = "X-Numbers",
   request_type = "RequestType",
-  rounds = "Rounds"
+  rounds = "Rounds",
+  reject = "Reject",
+  get_round_info = "GetRoundInfo"
 }
 
 Const.RoundStatus = {

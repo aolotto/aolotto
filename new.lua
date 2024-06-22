@@ -19,9 +19,9 @@ if not TOKEN then TOKEN = {
   Denomination=3,
   Name="AolottoToken"
 } end
-if not SHOOTER then SHOOTER = _config.SHOOTER or "7tiIWi2kR_H9hkDQHxy2ZqbOFVb58G4SgQ8wfZGKe9g" end
-if not OPERATOR then OPERATOR = _config.OPERATOR or "-_hz5V_I73bHVHqKSJF_B6cDBBSn8z8nPEUGcViTYko" end
-if not ARCHIVER then ARCHIVER = _config.ARCHIVER or "MmIMz7OK893PDr5tYQyHPBEWZxQiyNwUBPBRLWQib1I" end
+if not SHOOTER then SHOOTER = _config.SHOOTER end
+if not OPERATOR then OPERATOR = _config.OPERATOR end
+if not ARCHIVER then ARCHIVER = _config.ARCHIVER end
 
 --[[
   *******************
@@ -69,7 +69,20 @@ setmetatable(STATE,{__index=require("modules.state")})
 --[[
   轮次
 ]]
-if not ROUNDS then ROUNDS = {repo={},current=1,duration = 86400000} end
+if not CURRENT then CURRENT = {
+  bets={},
+  logs={},
+  statistics={},
+  no="1",
+  duration = 86400000,
+  start_time = nil,
+  base_rewards = 0,
+  bets_count=0,
+  status = 0,
+  bets_amount = 0,
+  participants = 0,
+  end_time = nil,
+} end
 setmetatable(ROUNDS,{__index=require("modules.rounds")})
 
 --[[
@@ -87,9 +100,8 @@ setmetatable(USERS,{__index=require("modules.users")})
 --[[
   归档暂存
 ]]
--- if not ARCHIVES then ARCHIVES = {archiver = ARCHIVER} end
--- setmetatable(ARCHIVES,{__index=require("modules.archives")})
-
+if not ARCHIVES then ARCHIVES = {archiver = ARCHIVER,repo={}} end
+setmetatable(ARCHIVES,{__index=require("modules.archives")})
 
 --[[
   退款记录

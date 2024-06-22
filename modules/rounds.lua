@@ -100,18 +100,6 @@ function rounds:draw(archive,timestamp)
 end
 
 
-function rounds:refundToken(msg)
-  assert(msg.Sender ~= nil, "Missed Sender.")
-  assert(msg.Quantity ~= nil and tonumber(msg.Quantity) > 0, "Missed Quantity.")
-  local message = {
-    Target = msg.From,
-    Action = "Transfer",
-    Recipient = msg.Sender,
-    Quantity = msg.Quantity,
-    [const.Actions.x_transfer_type] = const.Actions.refund
-  }
-  ao.send(message)
-end
 
 function rounds:get(no)
   local key = no~=nil and tostring(no) or tostring(self.current)
