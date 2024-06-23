@@ -109,7 +109,9 @@ if not REFUNDS then REFUNDS = {logs={}} end
 setmetatable(REFUNDS,{__index=require("modules.refund")})
 
 
---[[ 投注接口 ]]
+--[[ 
+  投注接口 
+]]
 
 Handlers.add(
   '_credit_bet',
@@ -261,7 +263,9 @@ Handlers.add(
   function (msg)
     if msg.Tags.Action == const.Actions.archive_round then
       return msg.From == OPERATOR or msg.From == ao.id
-    end
+    else
+      return false
+    end  
   end,
   function (msg)
     xpcall(function (msg)
@@ -278,7 +282,6 @@ Handlers.add(
           Data = json.encode(archive)
         })
         ARCHIVES.repo[msg.Tags.Round].archiver = msg.Tags.Archiver
-        print("data send to archiver")
       end
     end,function (err)
       print(err)
@@ -290,16 +293,12 @@ Handlers.add(
 Handlers.add(
   "_round_archived",
   function (msg)
-    if msg.Tags.Action == const.Actions.round_archived and msg.Tags.Round then
-      return true
-    else
-      return false
-    end
+    if msg.Tags.Action == const.Actions.round_archived and msg.Tags.Round then return true else return false end
   end,
   function (msg)
     xpcall(function (msg)
       assert(ARCHIVES.repo[tostring(msg.Tags.Round)].archiver == msg.From,"archiver are not martched.")
-      print("已存档")
+      ARCHIVES:removeRawData(msg.Tags.Round)
     end,function (err)
       print(err)
     end,msg)

@@ -25,7 +25,7 @@ function Archives:draw( no, win_num )
       if value.numbers[win_num] then
           table.insert(winners, {
             id = key,
-            amount = value.numbers[win_num]
+            matched_bets = value.numbers[win_num]
           })
       end
     end
@@ -40,7 +40,7 @@ function Archives:draw( no, win_num )
       utils.map(function (v, key)
         v["percent"] = v.amount / total
         v["rewards"] = math.floor(v.amount * per)
-        v["matched"] = win_num
+        v["winning_number"] = win_num
       end,winners)
     end
 
@@ -61,20 +61,16 @@ function Archives:set(no,data)
   self.repo[tostring(no)] = type(data) == "string" and data or json.encode(data)
 end
 
-function Archives:transfer_data(no,archiver_process,timestamp)
-  assert(archiver_process ~= nil,"missed target process to archive.")
-  self.repo = self.repo or {}
-  self.logs = self.logs or {}
-  if self.repo[tostring(no)]~=nil then
-    ao.send({
-      Target = archiver_process,
-      Action = const.Actions.archive_round,
-      Round = tostring(no),
-      Data = self.repo[tostring(no)]
-    })
+function Archives:removeRawData(no)
+  no = tostring(no)
+  assert(self.repo[no]~=nil,"no target archive for "..no)
+  assert(self.repo[no].archiver~=nil,"no archiver address.")
+  self.repo[no].bets = nil
+  self.repo[no].logs = nil
+  self.repo[no].statistics = nil
+  self.repo[no].winners = nil
+  self.repo[no].archived = true
+end
 
-    table.insert(self.logs ,{round=tostring(no), archiver=archiver_process, timestamp=timestamp})
-  end
-end 
 
 return Archives

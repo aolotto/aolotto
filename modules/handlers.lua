@@ -1,2 +1,0 @@
-Handlers.authOperater = function(msg)
-

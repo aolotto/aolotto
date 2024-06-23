@@ -26,7 +26,14 @@ Const.Actions = {
   request_type = "RequestType",
   rounds = "Rounds",
   reject = "Reject",
-  get_round_info = "GetRoundInfo"
+  get_round_info = "GetRoundInfo",
+  reward_notice = "Reward-Notice",
+  reward_amount = "Reward-Amount",
+  round = "Round",
+  winning_number = "Winning-Number",
+  matched_bets = "Matched-Bets",
+  percent = "Percent"
+
 }
 
 Const.RoundStatus = {
@@ -38,6 +45,14 @@ Const.RoundStatus = {
 Const.ErrorCode = {
   default = "400",
   transfer_error = "Transfer-Error"
+}
+
+Const.Colors = {
+  red = "\27[31m",
+  green = "\27[32m",
+  blue = "\27[34m",
+  yellow = "\27[33m",
+  reset = "\27[0m"
 }
 
 return Const
