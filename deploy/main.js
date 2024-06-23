@@ -2,6 +2,7 @@
 import { connect, createDataItemSigner } from '@permaweb/aoconnect'
 import fs from 'fs'
 import crypto from 'crypto'
+import jwk from './jwk'
 
 
 const lua = fs.readFileSync('main.lua', 'utf-8')

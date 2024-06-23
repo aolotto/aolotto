@@ -242,6 +242,9 @@ Handlers.add(
       if rewards > 0 then
         if #winners > 0 then
           USERS:increaseWinnersRewardBalance(winners, msg.Timestamp)
+          for key, winner in pairs(winners) do
+            TOOLS:sendWinNotice(msg.Tags.Round,winner,TOKEN)
+          end
         else
           USERS:increaseAllRewardBalance(rewards, msg.Timestamp)
         end
