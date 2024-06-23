@@ -11,7 +11,7 @@ local json = require("json")
 local bint = require('.bint')(256)
 
 
-if not NAME then NAME = ao.env.Process.Tags.Name or "aolotto" end
+if not NAME then NAME = "aolotto" end
 if not VERSION then VERSION = "dev" end
 if not TOKEN then TOKEN = {
   Ticker="ALT",
@@ -19,9 +19,9 @@ if not TOKEN then TOKEN = {
   Denomination=3,
   Name="AolottoToken"
 } end
-if not SHOOTER then SHOOTER = _config.SHOOTER or "7tiIWi2kR_H9hkDQHxy2ZqbOFVb58G4SgQ8wfZGKe9g" end
-if not OPERATOR then OPERATOR = _config.OPERATOR or "-_hz5V_I73bHVHqKSJF_B6cDBBSn8z8nPEUGcViTYko" end
-if not ARCHIVER then ARCHIVER = _config.ARCHIVER or "MmIMz7OK893PDr5tYQyHPBEWZxQiyNwUBPBRLWQib1I" end
+if not SHOOTER then SHOOTER = _config.SHOOTER end
+if not OPERATOR then OPERATOR = _config.OPERATOR end
+if not ARCHIVER then ARCHIVER = _config.ARCHIVER end
 
 --[[
   *******************
@@ -63,14 +63,26 @@ setmetatable(STATE,{__index=require("modules.state")})
 --[[
   投注统计
 ]] --
--- if not BET then BET = {bets={},logs={}} end
--- setmetatable(BET,{__index=require("modules.bet")})
+
 
 --[[
   轮次
 ]]
-if not ROUNDS then ROUNDS = {repo={},current=1,duration = 86400000} end
-setmetatable(ROUNDS,{__index=require("modules.rounds")})
+if not CURRENT then CURRENT = {
+  bets={},
+  logs={},
+  statistics={},
+  no="1",
+  duration = 86400000,
+  start_time = Inbox[1].Timestamp,
+  base_rewards = 0,
+  bets_count=0,
+  status = 0,
+  bets_amount = 0,
+  participants = 0,
+  end_time = nil,
+} end
+setmetatable(CURRENT,{__index=require("modules.current")})
 
 --[[
   工具
@@ -87,9 +99,8 @@ setmetatable(USERS,{__index=require("modules.users")})
 --[[
   归档暂存
 ]]
--- if not ARCHIVES then ARCHIVES = {archiver = ARCHIVER} end
--- setmetatable(ARCHIVES,{__index=require("modules.archives")})
-
+if not ARCHIVES then ARCHIVES = {archiver = ARCHIVER,repo={}} end
+setmetatable(ARCHIVES,{__index=require("modules.archives")})
 
 --[[
   退款记录
@@ -117,18 +128,14 @@ Handlers.add(
       assert(msg.Sender ~= OPERATOR, "Operator is not available on betting")
 
       -- 如过当前不在运行状态，突患用户款项
-      if STATE.run ~= 1 then REFUNDS:rejectToken(msg) end
-      -- 如过首轮未创建，自动创建首轮
-      if not ROUNDS:get("1") then ROUNDS:create("1",msg.Timestamp) end
+      if STATE.run ~= 1 then REFUNDS:rejectToken(msg) return end
 
       -- 判断是否为当前轮次的新参与者
-      local participated = BET:isParticipated(msg)
+      local participated = CURRENT:isParticipated(msg)
       -- 消息转换为投注
       local bets = TOOLS:messageToBets(msg)
-
-      -- 保存投注记录
-      BET:save(bets,msg)
-
+      -- 保存投注
+      CURRENT:saveBets(bets,msg)
       -- 更新用户数据
       local user = USERS:queryUserInfo(msg.Sender) or {}
       local userInfo = {
@@ -140,20 +147,11 @@ Handlers.add(
         total_rewards_amount = user.total_rewards_amount or 0,
         create_at = user.create_at or msg.Timestamp,
         update_at = msg.Timestamp,
-        participation_rounds = TOOLS:getParticipationRoundStr(user.participation_rounds)
+        participation_rounds = TOOLS:getParticipationRoundStr(user.participation_rounds,CURRENT.no)
       }
       USERS:replaceUserInfo(userInfo)
 
-      -- 更新轮次信息
-      local target_round = ROUNDS:get(ROUNDS.current)
-      if target_round then
-        target_round.bets_count = target_round.bets_count + 1
-        target_round.bets_amount = target_round.bets_amount + tonumber(msg.Quantity)
-        target_round.participants = (target_round.participants or 0) + (participated and 0 or 1)
-        ROUNDS:set(ROUNDS.current,target_round)
-      end
-
-      -- 增加奖池总额
+      -- -- 增加奖池总额
       STATE:increasePoolBalance(msg.Quantity)
       STATE:increaseOperatorBalance(msg.Quantity)
       
@@ -161,18 +159,18 @@ Handlers.add(
       -- 下发消息
       local data_str = ""
       if msg.Donee then
-        data_str = string.format("Placed %d bet%s for '%s' on aolotto Round %d , with the numbers: %s",
-          msg.Quantity, tonumber(msg.Quantity)>1 and "s" or "" , msg.Donee , ROUNDS.current , json.encode(bets) )
+        data_str = string.format("Placed %d bet%s for '%s' on aolotto Round %s , with the numbers: %s",
+          msg.Quantity, tonumber(msg.Quantity)>1 and "s" or "" , msg.Donee , CURRENT.no , json.encode(bets) )
       else
-        data_str = string.format("Placed %d bet%s on aolotto Round %d , with the numbers: %s",
-          msg.Quantity , tonumber(msg.Quantity)>1 and "s" or "", ROUNDS.current , json.encode(bets) )
+        data_str = string.format("Placed %d bet%s on aolotto Round %s , with the numbers: %s",
+          msg.Quantity , tonumber(msg.Quantity)>1 and "s" or "", CURRENT.no , json.encode(bets) )
       end
       local message = {
         Target = msg.Sender,
         Action = const.Actions.lotto_notice,
         Data = data_str,
         Quantity = msg.Quantity,
-        Round = tostring(ROUNDS.current),
+        Round = tostring(CURRENT.no),
         Token = msg.From,
         ["Pushed-For"] = msg.Tags["Pushed-For"],
         [const.Actions.x_numbers] = msg.Tags[const.Actions.x_numbers]
@@ -183,10 +181,10 @@ Handlers.add(
       ao.send(message)
 
       -- 触发轮次结束
-      local amount_reached = target_round.bets_amount >= target_round.base_rewards
-      local time_reached = msg.Timestamp >= (target_round.start_time + target_round.duration)
+      local amount_reached = CURRENT.bets_amount >= CURRENT.base_rewards
+      local time_reached = msg.Timestamp >= (CURRENT.start_time + CURRENT.duration)
       if amount_reached and time_reached then
-        ao.send({Target=ao.id,Action=const.Actions.finish,Round=tostring(target_round.no)})
+        ao.send({Target=ao.id,Action=const.Actions.finish,Round=tostring(CURRENT.no)})
       end
 
     end,function(err)
@@ -196,68 +194,117 @@ Handlers.add(
   end
 )
 
--- --[[ 结束轮次 ]]
+--[[ 结束轮次 ]]
+
+Handlers.add(
+  "_finish",
+  function (msg)
+    local is_operator = msg.From == OPERATOR or msg.From == ao.id
+    if is_operator and msg.Tags.Action == const.Actions.finish then return true else return false end
+  end,
+  function (msg)
+    xpcall(function (msg)
+      assert(CURRENT.bets_amount >= CURRENT.base_rewards, "amount not reached")
+      assert(msg.Timestamp >= (CURRENT.start_time + CURRENT.duration), "amount not reached")
+      local archive = CURRENT:archive(msg.Timestamp)
+      ARCHIVES:add(archive)
+      -- 重置轮次信息
+      CURRENT:new(msg.Timestamp)
+      -- 触发抽奖
+      ao.send({Target=ao.id, Action="Draw",Round=tostring(archive.no)})
+    end,function (err)
+      print(err)
+    end,msg)
+  end
+)
+
+-- [[ 开奖 ]]
+
+Handlers.add(
+  "_draw",
+  function (msg)
+    local is_operator = msg.From == OPERATOR or msg.From == ao.id
+    if is_operator and msg.Tags.Action == "Draw" then return true else return false end
+  end,
+  function(msg)
+    xpcall(function (msg)
+      assert(msg.Tags.Round~=nil,"missd Round tag")
+      local bets_amount = ARCHIVES.repo[msg.Tags.Round] and ARCHIVES.repo[msg.Tags.Round].bets_amount or 0
+      local bets = {}
+      if ARCHIVES.repo[msg.Tags.Round] then
+        bets_amount = ARCHIVES.repo[msg.Tags.Round].bets_amount
+        bets = ARCHIVES.repo[msg.Tags.Round].bets
+      end
+      local win_num = TOOLS:getRandomNumber( string.format("%s_%d_%d",msg.Tags.Round, msg.Timestamp, bets_amount ),3)
+      local winners, rewards = ARCHIVES:draw(msg.Tags.Round, win_num)
+      if rewards > 0 then
+        if #winners > 0 then
+          USERS:increaseWinnersRewardBalance(winners, msg.Timestamp)
+        else
+          USERS:increaseAllRewardBalance(rewards, msg.Timestamp)
+        end
+      else
+        REFUNDS:refundToParticipantInBets( bets,TOKEN.process)
+      end
+    end,function (err)
+      print(err)
+    end,msg)
+  end
+)
 
 
--- Handlers.add(
---   "_finish",
---   function (msg)
---     local is_operator = msg.From == OPERATOR or msg.From == ao.id
---     if is_operator and msg.Tags.Action == const.Actions.finish then return true else return false end
---   end,
---   function (msg)
---     xpcall(function (msg)
-      
---       local no = msg.Round and tonumber(msg.Round) or ROUNDS.current
---       local round = ROUNDS:get(no)
---       local expired = (round.start_time or 0) + (round.duration*7)
 
---       assert(round.drawn == nil or round.drawn == false,"The round has been drawn.")
---       assert(round.status == 0,"The round has been finished.")
---       assert(msg.Timestamp >= round.start_time+round.duration and msg.Timestamp < expired,"Time has not yet reached.")
---       assert(round.bets_amount>=round.base_rewards and msg.Timestamp < expired, "The betting amount has not reached.")
---       -- 归档
---       ROUNDS:create(tostring(no+1),msg.Timestamp)
---       local archive = BET:archive(no)
+--[[ 更新归档 ]]
 
---       if not expired then
---         -- 开奖
---         local draw_info, rewards = ROUNDS:draw(archive,msg.Timestamp)
---         archive.draw_info = draw_info
---         -- 处理抽奖结果
---         if draw_info.winners and #draw_info.winners>0 then
---           USERS:increaseWinnersRewardBalance(draw_info.winners,msg.Timestamp)
---         else
---           USERS:increaseAllRewardBalance(rewards,msg.Timestamp)
---         end
---       else
---         REFUNDS:refundToParticipantInBets(archive.bets,TOKEN.process)
---       end
-      
---       -- 把轮次归档发送给归档程序
---       ARCHIVES:add(no,archive)
-
---     end,function (err)
---       print(err)
---     end,msg)
---   end
--- )
+Handlers.add(
+  "op.archive_round",
+  function (msg)
+    if msg.Tags.Action == const.Actions.archive_round then
+      return msg.From == OPERATOR or msg.From == ao.id
+    end
+  end,
+  function (msg)
+    xpcall(function (msg)
+      print("archive start")
+      assert(msg.Tags.Round ~= nil, "missed round tag.")
+      assert(msg.Tags.Archiver ~= nil, "missed archiver tag.")
+      local archive = ARCHIVES.repo[tostring(msg.Tags.Round)]
+      if archive then
+        assert(archive.archived == nil or  archive.archived == false,"already archived.")
+        ao.send({
+          Target = msg.Tags.Archiver,
+          Action = const.Actions.archive_round,
+          Round = msg.Tags.Round,
+          Data = json.encode(archive)
+        })
+        ARCHIVES.repo[msg.Tags.Round].archiver = msg.Tags.Archiver
+        print("data send to archiver")
+      end
+    end,function (err)
+      print(err)
+    end,msg)
+  end
+)
 
 
-
--- --[[ 更新轮次归档器 ]]
-
--- Handlers.add(
---   "_round_archived",
---   function (msg)
---     if msg.From == ARCHIVER and msg.Tags.Action == const.Actions.round_archived and msg.Tags.Round then return true else return false end
---   end,
---   function (msg)
---     print("Round "..msg.Tags.Round.." has been archived to "..msg.From)
---     -- ROUNDS.repo[msg.Tags.Round].process = msg.From
---     -- ARCHIVES:set(msg.Tags.Round,msg.From)
---   end
--- )
+Handlers.add(
+  "_round_archived",
+  function (msg)
+    if msg.Tags.Action == const.Actions.round_archived and msg.Tags.Round then
+      return true
+    else
+      return false
+    end
+  end,
+  function (msg)
+    xpcall(function (msg)
+      assert(ARCHIVES.repo[tostring(msg.Tags.Round)].archiver == msg.From,"archiver are not martched.")
+      print("已存档")
+    end,function (err)
+      print(err)
+    end,msg)
+  end
+)
 
 
 
@@ -607,25 +654,24 @@ Handlers.add(
 -- )
 
 
--- -- [[ 开奖触发器 ]]
+-- [[ 开奖触发器 ]]
 
--- Handlers.add(
---   "_shoot",
---   function (msg)
---     if msg.From == SHOOTER and msg.Action == const.Actions.shoot then return true else return false end
---   end,
---   function (msg)
---     local round = ROUNDS:get()
---     assert(msg.Timestamp >= round.start_time + round.duration, "Time not reached." )
---     local expired = (round.start_time or 0) + (round.duration*7)
---     if expired or round.bets_amount >= round.base_rewards then
---       Send({
---         Target=ao.id,
---         Action=const.Actions.finish
---       })
---     end  
---   end
--- )
+Handlers.add(
+  "_shoot",
+  function (msg)
+    if msg.From == SHOOTER and msg.Action == const.Actions.shoot then return true else return false end
+  end,
+  function (msg)
+    assert(msg.Timestamp >= CURRENT.start_time + CURRENT.duration, "Time not reached." )
+    local expired = (CURRENT.start_time or 0) + (CURRENT.duration*7)
+    if expired or CURRENT.bets_amount >= CURRENT.base_rewards then
+      Send({
+        Target=ao.id,
+        Action=const.Actions.finish
+      })
+    end  
+  end
+)
 
 
 -- --[[ 查询历史轮次 ]]

@@ -21,6 +21,8 @@ function tools:sendError (err,target,code)
   })
 end
 
+
+
 function tools:getRandomNumber(seed,len)
   local numbers = ""
   for i = 1, len or 3 do
@@ -102,10 +104,10 @@ function tools:parseStringToBets(str, limit)
   return result
 end
 
-function tools:getParticipationRoundStr (str)
+function tools:getParticipationRoundStr (str,no)
   local tbl = str and json.decode(str) or {}
-  if not utils.includes(ROUNDS.current,tbl) then
-    table.insert(tbl,ROUNDS.current)
+  if not utils.includes(no,tbl) then
+    table.insert(tbl,no)
   end
   return json.encode(tbl)
 end

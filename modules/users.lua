@@ -77,5 +77,4 @@ function users:increaseWinnersRewardBalance (winners,timestamp)
 end
 
 
-
 return users

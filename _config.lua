@@ -1,8 +1,8 @@
 
     local config = {}
-    config.AGENT = "dWGjeOLSGAu7kL8WaIljV9brKwn9AktNXvFnSTZcZf8"
-    config.SHOOTER = "NldSVHqaY1okNcPsU0WiACRXHZdjiww_Gvi6XKtAN0c"
-    config.ARCHIVER = "FWVPLsVkXHdQQJ_h5-PSHO5kBaBdj7Gt8d1xFk8c_ko"
-    config.OPERATOR = "nzRrGYyfjc14hpfaVoXnHxFBW71i8DhPPSyvSjVwYhU"
+    config.AGENT = "G0cupCsndbBT1DAf_VEnv_oW-b8oxIGLvADC0J3wtrM"
+    config.SHOOTER = "CV8e1PX-ucDkhWGORDog8Fs40kI83R4UilxMNrCyjkM"
+    config.ARCHIVER = "by1uQAC2HgCuMWTTIv8tGN_b7nkRird8-We776AMQx0"
+    config.OPERATOR = "KaQB3mNdZmZr69-9uTLJRw1_QGjJzAQr6GufCPwi4kQ"
     return config
   
