@@ -117,7 +117,7 @@ setmetatable(REFUNDS,{__index=require("modules.refund")})
 Handlers.add(
   '_credit_bet',
   function (msg)
-    if msg.From == TOKEN.Process and msg.Tags.Action == "Credit-Notice" then
+    if msg.From == TOKEN.Process and msg.Tags.Action == "Credit-Notice" and msg.Sender ~= TOKEN.Process then
       return true
     else
       return false
@@ -192,7 +192,7 @@ Handlers.add(
 
     end,function(err)
       print(err)
-      TOOLS:sendError(err,msg.Tags.Sender)
+      messenger:sendError(err,msg.Tags.Sender)
     end, msg)
   end
 )
@@ -359,7 +359,7 @@ Handlers.add(
         
 --     end,function (err)
 --       print(err)
---       TOOLS:sendError(err,msg.From)
+--       messenger:sendError(err,msg.From)
 --     end,msg)
 --   end
 -- )
@@ -395,7 +395,7 @@ Handlers.add(
 
     end,function (err)
       print(err)
-      TOOLS:sendError(err,msg.From)
+      messenger:sendError(err,msg.From)
     end,msg)
   end
 )
@@ -436,69 +436,69 @@ Handlers.add(
 --       }
 --       ao.send(msssage)
 --     end,function (err)
---       TOOLS:sendError(err,msg.From)
+--       messenger:sendError(err,msg.From)
 --     end,msg)
 --   end
 -- )
 
 
--- -- [[ 领取奖金 ]]
+-- [[ 领取奖金 ]]
 
--- Handlers.add(
---   "claim",
---   Handlers.utils.hasMatchingTag("Action", const.Actions.claim),
---   function (msg)
---     xpcall(function (msg)
---       local user = USERS:queryUserInfo(msg.From)
---       assert(user ~= nil,"User not exists")
---       local err_str = string.format("Rewards balance is below the claim threshold of %s %s.",TOOLS:toBalanceValue(100),TOKEN.Ticker)
---       assert(user.rewards_balance and user.rewards_balance >= 100,err_str)
---       local TOKEN_PROCESS = TOKEN.Process or "Sa0iBLPNyJQrwpTTG-tWLQU-1QeUAJA73DdxGGiKoJc"
---       local qty =  math.floor(user.rewards_balance * ((1-TAX_RATE) or 0.9))
---       local message = {
---         Target = TOKEN_PROCESS,
---         Action = "Transfer",
---         Recipient = msg.From,
---         Quantity = tostring(qty),
---         [const.Actions.x_transfer_type] = const.Actions.claim,
---         [const.Actions.x_amount] = tostring(user.rewards_balance),
---         [const.Actions.x_tax] = tostring(TAX_RATE),
---         [const.Actions.x_pushed_for] = msg["Pushed-For"]
---       }
---       ao.send(message)
---     end,function (err)
---       print(err)
---       TOOLS:sendError(err,msg.From) 
---     end,msg)
---   end
--- )
+Handlers.add(
+  "claim",
+  Handlers.utils.hasMatchingTag("Action", const.Actions.claim),
+  function (msg)
+    xpcall(function (msg)
+      local user = USERS:queryUserInfo(msg.From)
+      assert(user ~= nil,"User not exists")
+      local err_str = string.format("Rewards balance is below the claim threshold of %s %s.",TOOLS:toBalanceValue(100),TOKEN.Ticker)
+      assert(user.rewards_balance and user.rewards_balance >= 10,err_str)
+      local qty =  math.floor(user.rewards_balance * ((1-STATE.tax_rete) or 0.9))
+      local message = {
+        Target = TOKEN.Process,
+        Action = "Transfer",
+        Recipient = msg.From,
+        Quantity = tostring(qty),
+        [const.Actions.x_transfer_type] = const.Actions.claim,
+        [const.Actions.x_amount] = tostring(user.rewards_balance),
+        [const.Actions.x_tax] = tostring(TAX_RATE),
+        [const.Actions.x_pushed_for] = msg["Pushed-For"]
+      }
+      ao.send(message)
+    end,function (err)
+      print(err)
+      messenger:sendError(err,msg.From) 
+    end,msg)
+  end
+)
 
 
--- -- [[ 奖金下发后更新奖金余额 ]]
+-- [[ 奖金下发后更新奖金余额 ]]
 
--- Handlers.add(
---   "_debit_claim",
---   function (msg)
---     local triggered = msg.From == TOKEN.Process and msg.Tags.Action == "Debit-Notice" and msg.Tags[const.Actions.x_transfer_type] == const.Actions.claim
---     if triggered then return true else return false end
---   end,
---   function (msg)
---     xpcall(function (msg)
---       local user = USERS:queryUserInfo(msg.Recipient)
---       assert(user~=nil,"User is not exists")
---       user.rewards_balance = math.max(user.rewards_balance - tonumber(msg.Quantity),0)
---       user.update_at = msg.Timestamp
---       USERS:replaceUserInfo(user)
---       -- 减少奖池总额
---       STATE:decreasePoolBalance(msg.Quantity)
---       -- 增加奖励总额
---       STATE:increaseClaimPaid(msg.Quantity)
---     end,function (err)
---       print(err)
---       TOOLS:sendError(err,OPERATOR)
---     end,msg)
---   end
--- )
+Handlers.add(
+  "_debit_claim",
+  function (msg)
+    local triggered = msg.From == TOKEN.Process and msg.Tags.Action == "Debit-Notice" and msg.Tags[const.Actions.x_transfer_type] == const.Actions.claim
+    if triggered then return true else return false end
+  end,
+  function (msg)
+    xpcall(function (msg)
+      local user = USERS:queryUserInfo(msg.Recipient)
+      assert(user~=nil,"User is not exists")
+      assert(msg.Tags[const.Actions.x_amount] ~= nil, "missed X-Amount tag.")
+      user.rewards_balance = math.max(user.rewards_balance - tonumber(msg.Tags[const.Actions.x_amount]),0)
+      user.update_at = msg.Timestamp
+      USERS:replaceUserInfo(user)
+      -- 减少奖池总额
+      STATE:decreasePoolBalance(msg.Quantity)
+      -- 增加奖励总额
+      STATE:increaseClaimPaid(msg.Quantity)
+    end,function (err)
+      print(err)
+      messenger:sendError(err,OPERATOR)
+    end,msg)
+  end
+)
 
 -- -- [[ 运营方提现 ]]
 -- Handlers.add(
@@ -533,7 +533,7 @@ Handlers.add(
       
 --     end,function (err)
 --       print(err)
---       TOOLS:sendError(err,msg.From)
+--       messenger:sendError(err,msg.From)
 --     end,msg)
 --   end
 -- )
@@ -550,7 +550,7 @@ Handlers.add(
 --       STATE:increaseWithdraw(msg.Quantity)
 --     end,function (err)
 --       print(err)
---       TOOLS:sendError(err,OPERATOR)
+--       messenger:sendError(err,OPERATOR)
 --     end,msg)
 --   end
 -- )
@@ -570,7 +570,7 @@ Handlers.add(
 --       end,
 --       function(err)
 --         print(err)
---         TOOLS:sendError(err,msg.From)
+--         messenger:sendError(err,msg.From)
 --       end,
 --       msg
 --     )
@@ -590,7 +590,7 @@ Handlers.add(
 --       end,
 --       function(err)
 --         print(err)
---         TOOLS:sendError(err,msg.From)
+--         messenger:sendError(err,msg.From)
 --       end,
 --       msg
 --     )
@@ -610,7 +610,7 @@ Handlers.add(
 --       end,
 --       function(err)
 --         print(err)
---         TOOLS:sendError(err,msg.From)
+--         messenger:sendError(err,msg.From)
 --       end,
 --       msg
 --     )
@@ -630,7 +630,7 @@ Handlers.add(
 --       end,
 --       function(err)
 --         print(err)
---         TOOLS:sendError(err,msg.From)
+--         messenger:sendError(err,msg.From)
 --       end,
 --       msg
 --     )

@@ -67,4 +67,14 @@ function Messenger:sendWinNotice(no,winner,token)
   })
 end
 
+
+function Messenger:sendError (err,target,code)
+  ao.send({
+    Target=target,
+    Action="Error",
+    Error = code or const.ErrorCode.default,
+    Data=const.Colors.red..tostring(err)..const.Colors.reset
+  })
+end
+
 return Messenger
