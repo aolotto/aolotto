@@ -380,14 +380,7 @@ Handlers.add(
       end
       assert(target_round~=nil,"The round is not exists")
       
-      if target_round.archived then
-        print("归档转发--> "..target_round.archiver)
-        assert(target_round.archiver~=nil,"no archiver process for your query.")
-        ao.assign({
-          Processes = { target_round.archiver },
-          Message = msg.Id
-        })
-      else
+      if not target_round.archived then
         local user_bets = target_round.bets[msg.From]
         assert(user_bets~=nil, "no bets you pleaced in this round.")
         messenger:replyUserBets(msg.From,{
@@ -395,6 +388,9 @@ Handlers.add(
           request_type = msg.RequestType or "",
           no = target_round.no
         })
+      else
+        assert(target_round.archiver ~= nil,"no archiver process for your query.")
+        messenger:forwardTo(target_round.archiver,msg)
       end
 
     end,function (err)

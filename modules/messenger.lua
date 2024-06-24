@@ -27,12 +27,19 @@ function Messenger:replyUserBets(target, options)
   ao.send(message)
 end
 
-function Messenger:forward(target,tags)
+function Messenger:forwardTo(target,msg)
   local message = {
     Target = target,
-    
+    Data = msg.Data,
+    User = msg.From,
   }
-
+  local exclude = {["From-Module"] = true, ["Variant"] = true, ["Data-Protocol"] = true, ["Ref_"] = true}
+  for key , val  in pairs(msg.Tags) do
+    if not exclude[key] then
+      message[key] = val
+    end
+  end
+  ao.send(message)
 end
 
 return Messenger

@@ -1,4 +1,5 @@
 local const = require("modules.const")
+local messenger = require("modules.messenger")
 local _config = require("_config")
 local utils = require(".utils")
 local json = require("json")
@@ -12,8 +13,8 @@ function _archive:save(data)
 end
 
 
-if not ARRCHIVES then ARRCHIVES = {data={}} end
-setmetatable(ARRCHIVES,{__index=_archive})
+if not ARCHIVES then ARCHIVES = {data={}} end
+setmetatable(ARCHIVES,{__index=_archive})
 
 
 Handlers.add(
@@ -30,4 +31,25 @@ Handlers.add(
       Round = msg.Tags.Round,
     })
   end  
+)
+
+Handlers.add(
+  'fetchBets',
+  Handlers.utils.hasMatchingTag("Action",const.Actions.bets),
+  function (msg)
+    xpcall(function (msg)
+      if msg.Round == ARCHIVES.data.no then
+        print(msg.User)
+        local user_bets = ARCHIVES.data.bets[msg.User]
+        assert(user_bets~=nil, "no bets you pleaced in this round.")
+        messenger:replyUserBets(msg.User,{
+          user_bets = user_bets,
+          request_type = msg.RequestType or "",
+          no = ARCHIVES.data.no
+        })
+      end
+    end,function (err)
+      print(err)
+    end,msg)
+  end
 )
