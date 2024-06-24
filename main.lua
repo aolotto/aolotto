@@ -5,6 +5,7 @@
 ]]--
 local _config = require("_config")
 local const = require("modules.const")
+local messenger = require("modules.messenger")
 local utils = require(".utils")
 local crypto = require(".crypto")
 local json = require("json")
@@ -363,60 +364,45 @@ Handlers.add(
 --   end
 -- )
 
--- --[[ 用户查询当前或指定轮次的下注信息 ]]
+--[[ 用户查询当前或指定轮次的下注信息 ]]
 
--- Handlers.add(
---   'fetchBets',
---   Handlers.utils.hasMatchingTag("Action",const.Actions.bets),
---   function (msg)
---     xpcall(function (msg)
---       local key = msg.Round or tostring(ROUNDS.current)
---       local is_current_round = key == tostring(ROUNDS.current) 
---       local round = ROUNDS:get(key)
---       assert(round ~= nil, "The round is not exists")
---       assert(is_current_round == false and round.process ~= nil,"The round you target has not been ready for query, please wait for minutes.")
+Handlers.add(
+  'fetchBets',
+  Handlers.utils.hasMatchingTag("Action",const.Actions.bets),
+  function (msg)
+    xpcall(function (msg)
+
+      local target_round = nil
+      if msg.Round == nil or msg.Round == CURRENT.no then
+        target_round = CURRENT
+      else
+        target_round = ARCHIVES.repo[msg.Round]
+      end
+      assert(target_round~=nil,"The round is not exists")
       
---       if is_current_round then
---         local user_bets = BET.bets[msg.From]
---         local request_type = msg.RequestType or ""
---         local data_str = ""
---         if user_bets and user_bets.count > 0 then
---           local total_numbers = 0
---           local total_bets = 0
---           local bets_str = "\n"..string.rep("-", 58).."\n"
---           for key, value in pairs(user_bets.numbers) do
---             total_numbers = total_numbers +1
---             total_bets = total_bets +value
---             bets_str = bets_str .. string.format(" %03d *%5d ",key,value) .. (total_numbers % 4 == 0 and "\n"..string.rep("-", 58).."\n" or " | ")
---           end
---           data_str = string.format([[You've placed %d bets that cover %d numbers on Round %d : ]],total_bets,total_numbers,ROUNDS.current)..bets_str
---         else
---           data_str = string.format("You don't have any bets on aolotto Round %d.",ROUNDS.current)
---         end
---         local message = {
---           Target = msg.From,
---           Action = const.Actions.reply_user_bets,
---           Data = (request_type == "json") and json.encode(user_bets.numbers) or data_str
---         }
---         ao.send(message)
---       else
---         local message = {
---           Target = round.process,
---           Action = const.Actions.bets,
---           User = msg.From
---         }
---         if msg.RequestType then
---           message[const.Actions.request_type] = msg[const.Actions.request_type]
---         end
---         ao.send(message)
---       end
-      
---     end,function (err)
---       print(err)
---       TOOLS:sendError(err,msg.From)
---     end,msg)
---   end
--- )
+      if target_round.archived then
+        print("归档转发--> "..target_round.archiver)
+        assert(target_round.archiver~=nil,"no archiver process for your query.")
+        ao.assign({
+          Processes = { target_round.archiver },
+          Message = msg.Id
+        })
+      else
+        local user_bets = target_round.bets[msg.From]
+        assert(user_bets~=nil, "no bets you pleaced in this round.")
+        messenger:replyUserBets(msg.From,{
+          user_bets = user_bets,
+          request_type = msg.RequestType or "",
+          no = target_round.no
+        })
+      end
+
+    end,function (err)
+      print(err)
+      TOOLS:sendError(err,msg.From)
+    end,msg)
+  end
+)
 
 -- -- [[ 查询用户的信息 ]]
 

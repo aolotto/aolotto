@@ -55,4 +55,10 @@ Const.Colors = {
   reset = "\27[0m"
 }
 
+Const.Strings = {
+  user_bets = [[
+  
+  ]]
+}
+
 return Const
