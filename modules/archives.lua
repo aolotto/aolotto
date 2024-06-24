@@ -32,14 +32,14 @@ function Archives:draw( no, win_num )
 
     -- 统计获奖者的奖金比例
     if #winners > 0 then
-      local total = utils.reduce(function (acc, v) return acc + v end)(0)(utils.map(function (val) return val.amount end)(winners))
+      local total = utils.reduce(function (acc, v) return acc + v end)(0)(utils.map(function (val) return val.matched_bets end)(winners))
       local per = math.floor(rewards/total)
       self.repo[no].total_win_bets = total
       self.repo[no].per_reward = per
       self.repo[no].total_rewarded = rewards
       utils.map(function (v, key)
-        v["percent"] = v.amount / total
-        v["rewards"] = math.floor(v.amount * per)
+        v["percent"] = v.matched_bets / total
+        v["rewards"] = math.floor(v.matched_bets * per)
         v["winning_number"] = win_num
       end,winners)
     end

@@ -22,29 +22,6 @@ function tools:sendError (err,target,code)
 end
 
 
-function tools:sendWinNotice(no,winner,token)
-  local rewards_str = self:toBalanceValue(winner.rewards,token.Denomination)
-  local data_str = string.format(
-    "Congrats! You've won %s %s, %s of total rewards in aolotto round %s. The winning number is [%s], and you have %d bets matched.",
-    rewards_str,
-    token.Ticker,
-    tostring(winner.percent*100).."%",
-    tostring(no),
-    tostring(winner.winning_number),
-    winner.matched_bets
-  )
-  ao.send({
-    Target=winner.id,
-    Action=const.Actions.reward_notice,
-    [const.Actions.reward_amount] = tostring(winner.rewards),
-    [const.Actions.round] = tostring(no),
-    [const.Actions.percent] = tostring(winner.percent),
-    [const.Actions.matched_bets] = tostring(winner.matched_bets),
-    [const.Actions.winning_number] = tostring(winner.winning_number),
-    Data = const.Colors.yellow..data_str..const.Colors.reset
-  })
-end
-
 
 function tools:getRandomNumber(seed,len)
   local numbers = ""

@@ -232,7 +232,7 @@ Handlers.add(
   function(msg)
     xpcall(function (msg)
       assert(msg.Tags.Round~=nil,"missd Round tag")
-      local bets_amount = ARCHIVES.repo[msg.Tags.Round] and ARCHIVES.repo[msg.Tags.Round].bets_amount or 0
+      local bets_amount = 0
       local bets = {}
       if ARCHIVES.repo[msg.Tags.Round] then
         bets_amount = ARCHIVES.repo[msg.Tags.Round].bets_amount
@@ -244,13 +244,13 @@ Handlers.add(
         if #winners > 0 then
           USERS:increaseWinnersRewardBalance(winners, msg.Timestamp)
           for key, winner in pairs(winners) do
-            TOOLS:sendWinNotice(msg.Tags.Round,winner,TOKEN)
+            messenger:sendWinNotice(msg.Tags.Round,winner,TOKEN)
           end
         else
           USERS:increaseAllRewardBalance(rewards, msg.Timestamp)
         end
       else
-        REFUNDS:refundToParticipantInBets( bets,TOKEN.process)
+        REFUNDS:refundToParticipantInBets( bets,TOKEN.Process)
       end
     end,function (err)
       print(err)
