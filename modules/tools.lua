@@ -10,18 +10,6 @@ local errorCode = {
   transfer_error = "Transfer-Error"
 }
 
-function tools:sendError (err,target,code)
-  local red = "\027[31m"
-  local reset = "\027[0m"
-  ao.send({
-    Target=target,
-    Action="Error",
-    Error = code or errorCode.default,
-    Data=red..tostring(err)..reset
-  })
-end
-
-
 
 function tools:getRandomNumber(seed,len)
   local numbers = ""

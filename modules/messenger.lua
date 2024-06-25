@@ -29,6 +29,7 @@ function Messenger:replyUserBets(target, options)
 end
 
 function Messenger:forwardTo(target,msg)
+  assert(target ~= nil,"no archiver process for your query.")
   local message = {
     Target = target,
     Data = msg.Data,
@@ -75,6 +76,50 @@ function Messenger:sendError (err,target,code)
     Error = code or const.ErrorCode.default,
     Data=const.Colors.red..tostring(err)..const.Colors.reset
   })
+end
+
+
+function Messenger:sendRoundInfo (round,token,msg)
+
+  local str = ""
+  if request_type == "json" then
+    str = json.encode(round)
+  else
+    
+  local state_str = const.RoundStatus[round.status]
+  local start_date_str = tools:timestampToDate(round.start_time,"%Y/%m/%d %H:%M")
+  local end_date_str = tools:timestampToDate(round.end_time or round.start_time+round.duration,"%Y/%m/%d %H:%M")
+  local total_prize = tools:toBalanceValue((round.base_rewards + (round.bets_amount or 0)),token.Denomination)
+  local participants_str = tostring(round.participants or 0)
+  local base_str = tostring(round.base_rewards)
+  local bets_str = tostring(round.bets_amount or 0)
+  local winners_str = tostring(0)
+  if round.winners then
+    winners_str = tostring(#round.winners)
+  end
+  local tips_str = round.status ~= 0 and string.format("Drawn on %s UTC, %s winners.",end_date_str,winners_str) or string.format("draw on %s UTC if bets >= %s",end_date_str,base_str)
+
+  str=  string.format([[
+
+  -----------------------------------------      
+  aolotto Round %d - %s
+  ----------------------------------------- 
+  * Total Prize:       %s %s
+  * Participants:      %s
+  * Bets:              %s
+  * Start at:          %s UTC
+  ----------------------------------------- 
+  %s
+
+    ]],tonumber(round.no),state_str,total_prize,token.Ticker or "AO",participants_str,bets_str,start_date_str,tips_str)
+  end
+  local message = {
+    Target = msg.User or msg.From,
+    Data = str,
+    Action = "Reply-RoundInfo",
+  }
+  ao.send(message)
+
 end
 
 return Messenger

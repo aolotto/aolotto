@@ -4,5 +4,11 @@
     config.SHOOTER = "CV8e1PX-ucDkhWGORDog8Fs40kI83R4UilxMNrCyjkM"
     config.ARCHIVER = "by1uQAC2HgCuMWTTIv8tGN_b7nkRird8-We776AMQx0"
     config.OPERATOR = "KaQB3mNdZmZr69-9uTLJRw1_QGjJzAQr6GufCPwi4kQ"
+    config.TOKEN = {
+        Ticker="ALT",
+        Process="zQ0DmjTbCEGNoJRcjdwdZTHt0UBorTeWbb_dnc6g41E",
+        Denomination=3,
+        Name="AolottoToken"
+      }
     return config
   

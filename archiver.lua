@@ -4,7 +4,9 @@ local _config = require("_config")
 local utils = require(".utils")
 local json = require("json")
 if not AGENT then  AGENT = _config.AGENT end
+if not TOKEN then _config.TOKEN end
 if not utils.includes(AGENT, ao.authorities) then table.insert(ao.authorities,AGENT) end
+
 
 
 local _archive = {}
@@ -50,6 +52,22 @@ Handlers.add(
       end
     end,function (err)
       print(err)
+    end,msg)
+  end
+)
+
+Handlers.add(
+  "getRoundInfo",
+  Handlers.utils.hasMatchingTag("Action",const.Actions.get_round_info),
+  function (msg)
+    xpcall(function (msg)
+      if msg.Round == ARCHIVES.data.no then
+        messenger:sendRoundInfo(ARCHIVES.data, TOKEN, msg)
+      end
+        
+    end,function (err)
+      print(err)
+      messenger:sendError(err,msg.From)
     end,msg)
   end
 )

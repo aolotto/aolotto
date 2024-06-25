@@ -14,15 +14,9 @@ local bint = require('.bint')(256)
 
 if not NAME then NAME = "aolotto" end
 if not VERSION then VERSION = "dev" end
-if not TOKEN then TOKEN = {
-  Ticker="ALT",
-  Process="zQ0DmjTbCEGNoJRcjdwdZTHt0UBorTeWbb_dnc6g41E",
-  Denomination=3,
-  Name="AolottoToken"
-} end
 if not SHOOTER then SHOOTER = _config.SHOOTER end
 if not OPERATOR then OPERATOR = _config.OPERATOR end
-if not ARCHIVER then ARCHIVER = _config.ARCHIVER end
+if not TOKEN then TOKEN = _config.TOKEN end
 
 --[[
   *******************
@@ -100,7 +94,7 @@ setmetatable(USERS,{__index=require("modules.users")})
 --[[
   归档暂存
 ]]
-if not ARCHIVES then ARCHIVES = {archiver = ARCHIVER,repo={}} end
+if not ARCHIVES then ARCHIVES = {repo={}} end
 setmetatable(ARCHIVES,{__index=require("modules.archives")})
 
 --[[
@@ -311,58 +305,35 @@ Handlers.add(
 
 
 
--- --[[ 查询当前或指定轮次的信息 ]]
+--[[ 查询当前或指定轮次的信息 ]]
 
--- Handlers.add(
---   "getRoundInfo",
---   Handlers.utils.hasMatchingTag("Action",const.Actions.get_round_info),
---   function (msg)
---     xpcall(function (msg)
---       local request_type = msg.Tags[const.Actions.request_type] or ""
---       local key = msg.Round or tostring(ROUNDS.current)
---       local round = ROUNDS:get(key)
---       assert(round ~= nil,"The round did not exists")
---       local str = ""
---       if request_type == "json" then
---         str = json.encode(round)
---       else
---       local state_str = const.RoundStatus[round.status]
---       local start_date_str = TOOLS:timestampToDate(round.start_time,"%Y/%m/%d %H:%M")
---       local end_date_str = TOOLS:timestampToDate(round.end_time or round.start_time+round.duration,"%Y/%m/%d %H:%M")
---       local total_prize = TOOLS:toBalanceValue(round.base_rewards + (round.bets_amount or 0))
---       local participants_str = tostring(round.participants or 0)
---       local base_str = tostring(round.base_rewards)
---       local bets_str = tostring(round.bets_amount or 0)
---       local winners_str = tostring(round.winners_count or 0)
---       local tips_str = round.status ~= 0 and string.format("Drawn on %s UTC, %s winners.",end_date_str,winners_str) or string.format("draw on %s UTC if bets >= %s",end_date_str,base_str)
+Handlers.add(
+  "getRoundInfo",
+  Handlers.utils.hasMatchingTag("Action",const.Actions.get_round_info),
+  function (msg)
+    xpcall(function (msg)
+      local target_round = nil
+      if msg.Round == nil or msg.Round == CURRENT.no then
+        target_round = CURRENT
+      else
+        target_round = ARCHIVES.repo[msg.Round]
+      end
+      assert(target_round~=nil,"The round is not exists")
 
---       str=  string.format([[
+      
 
---     -----------------------------------------      
---     aolotto Round %d - %s
---     ----------------------------------------- 
---     * Total Prize:       %s %s
---     * Participants:      %s
---     * Bets:              %s
---     * Start at:          %s UTC
---     ----------------------------------------- 
---     %s
-
---         ]],tonumber(key),state_str,total_prize,TOKEN.Ticker or "AO",participants_str,bets_str,start_date_str,tips_str)
---       end
---       local message = {
---         Target = msg.From,
---         Data = str,
---         Action = "Reply-RoundInfo",
---       }
---       ao.send(message)
+      if not target_round.archived then
+        messenger:sendRoundInfo(target_round, TOKEN, msg)
+      else
+        messenger:forwardTo(target_round.archiver,msg)
+      end
         
---     end,function (err)
---       print(err)
---       messenger:sendError(err,msg.From)
---     end,msg)
---   end
--- )
+    end,function (err)
+      print(err)
+      messenger:sendError(err,msg.From)
+    end,msg)
+  end
+)
 
 --[[ 用户查询当前或指定轮次的下注信息 ]]
 
@@ -389,7 +360,6 @@ Handlers.add(
           no = target_round.no
         })
       else
-        assert(target_round.archiver ~= nil,"no archiver process for your query.")
         messenger:forwardTo(target_round.archiver,msg)
       end
 
@@ -400,46 +370,46 @@ Handlers.add(
   end
 )
 
--- -- [[ 查询用户的信息 ]]
+-- [[ 查询用户的信息 ]]
 
--- Handlers.add(
---   "getUserInfo",
---   Handlers.utils.hasMatchingTag("Action", const.Actions.user_info),
---   function (msg)
---     xpcall(function (msg)
---       local user = USERS:queryUserInfo(msg.From)
---       assert(user ~= nil, "User not exists.")
---       local request_type = msg[const.Actions.request_type] or ""
---       local data_str = ""
---       if user then
---         if request_type == "json" then
---           local json = json or require("json")
---           data_str = json.encode(user)
---         else
---           data_str = string.format([==[
---   %s
---   -------------------------------------------
---   * Number of Wins :   %d
---   * Rewards Balance :  %s %s
---   * Total Rewards :    %s %s
---   * Bets Amount :      %d
---   * Bets Placed :      %d
---   -------------------------------------------
---   First bet on %d
---           ]==],user.id, user.total_rewards_count, TOOLS:toBalanceValue(user.rewards_balance),TOKEN.Ticker, TOOLS:toBalanceValue(user.total_rewards_amount),TOKEN.Ticker, user.bets_amount,user.bets_count,user.create_at)
---         end  
---       end
---       local msssage = {
---         Target = msg.From,
---         Action = const.Actions.reply_user_info,
---         Data = data_str
---       }
---       ao.send(msssage)
---     end,function (err)
---       messenger:sendError(err,msg.From)
---     end,msg)
---   end
--- )
+Handlers.add(
+  "getUserInfo",
+  Handlers.utils.hasMatchingTag("Action", const.Actions.user_info),
+  function (msg)
+    xpcall(function (msg)
+      local user = USERS:queryUserInfo(msg.From)
+      assert(user ~= nil, "User not exists.")
+      local request_type = msg[const.Actions.request_type] or ""
+      local data_str = ""
+      if user then
+        if request_type == "json" then
+          local json = json or require("json")
+          data_str = json.encode(user)
+        else
+          data_str = string.format([==[
+  %s
+  -------------------------------------------
+  * Number of Wins :   %d
+  * Rewards Balance :  %s %s
+  * Total Rewards :    %s %s
+  * Bets Amount :      %d
+  * Bets Placed :      %d
+  -------------------------------------------
+  First bet on %d
+          ]==],user.id, user.total_rewards_count, TOOLS:toBalanceValue(user.rewards_balance),TOKEN.Ticker, TOOLS:toBalanceValue(user.total_rewards_amount),TOKEN.Ticker, user.bets_amount,user.bets_count,user.create_at)
+        end  
+      end
+      local msssage = {
+        Target = msg.From,
+        Action = const.Actions.reply_user_info,
+        Data = data_str
+      }
+      ao.send(msssage)
+    end,function (err)
+      messenger:sendError(err,msg.From)
+    end,msg)
+  end
+)
 
 
 -- [[ 领取奖金 ]]
