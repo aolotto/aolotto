@@ -4,7 +4,7 @@ local _config = require("_config")
 local utils = require(".utils")
 local json = require("json")
 if not AGENT then  AGENT = _config.AGENT end
-if not TOKEN then _config.TOKEN end
+if not TOKEN then TOKEN =  _config.TOKEN end
 if not utils.includes(AGENT, ao.authorities) then table.insert(ao.authorities,AGENT) end
 
 
@@ -26,7 +26,7 @@ Handlers.add(
   end,
   function(msg)
     assert(msg.Tags.Round ~= nil, "Missed round tag.")
-    ARRCHIVES:save(json.decode(msg.Data))
+    ARCHIVES:save(json.decode(msg.Data))
     ao.send({
       Target = msg.From,
       Action = const.Actions.round_archived,

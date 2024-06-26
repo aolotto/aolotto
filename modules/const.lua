@@ -32,8 +32,8 @@ Const.Actions = {
   round = "Round",
   winning_number = "Winning-Number",
   matched_bets = "Matched-Bets",
-  percent = "Percent"
-
+  percent = "Percent",
+  change_archiver = "Change-Archiver"
 }
 
 Const.RoundStatus = {
@@ -55,10 +55,6 @@ Const.Colors = {
   reset = "\27[0m"
 }
 
-Const.Strings = {
-  user_bets = [[
-  
-  ]]
-}
+
 
 return Const

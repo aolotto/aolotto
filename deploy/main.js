@@ -62,10 +62,6 @@ async function main() {
     name:"AGENT",
     tags:[{name:"App-Id",value:uuid}]
   })
-  const ARCHIVER = await createProcess({
-    name:"ARCHIVER",
-    tags:[{name:"App-Id",value:uuid}]
-  })
   const SHOOTER = await createProcess({
     name:"SHOOTER",
     module:"1PdCJiXhNafpJbvC-sjxWTeNzbf9Q_RfUNs84GYoPm0",
@@ -87,7 +83,6 @@ async function main() {
     local config = {}
     config.AGENT = "${AGENT}"
     config.SHOOTER = "${SHOOTER}"
-    config.ARCHIVER = "${ARCHIVER}"
     config.OPERATOR = "${OPERATOR}"
     return config
   `

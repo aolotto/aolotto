@@ -260,7 +260,7 @@ Handlers.add(
   "op.archive_round",
   function (msg)
     if msg.Tags.Action == const.Actions.archive_round then
-      return msg.From == OPERATOR or msg.From == ao.id
+      if msg.From == OPERATOR or msg.From == ao.id then return true else return false
     else
       return false
     end  
@@ -279,6 +279,30 @@ Handlers.add(
           Round = msg.Tags.Round,
           Data = json.encode(archive)
         })
+        ARCHIVES.repo[msg.Tags.Round].archiver = msg.Tags.Archiver
+      end
+    end,function (err)
+      print(err)
+    end,msg)
+  end
+)
+
+Handlers.add(
+  "op.changer_archiver",
+  function (msg)
+    if msg.Tags.Action == const.Actions.change_archiver then
+      if msg.From == OPERATOR or msg.From == ao.id then return true else return false
+    else
+      return false
+    end  
+  end,
+  function (msg)
+    xpcall(function (msg)
+      print("change archiver")
+      assert(msg.Tags.Round ~= nil, "missed round tag.")
+      assert(msg.Tags.Archiver ~= nil, "missed archiver tag.")
+      local archive = ARCHIVES.repo[tostring(msg.Tags.Round)]
+      if archive then
         ARCHIVES.repo[msg.Tags.Round].archiver = msg.Tags.Archiver
       end
     end,function (err)
