@@ -16,7 +16,12 @@ if not NAME then NAME = "aolotto" end
 if not VERSION then VERSION = "dev" end
 if not SHOOTER then SHOOTER = _config.SHOOTER end
 if not OPERATOR then OPERATOR = _config.OPERATOR end
-if not TOKEN then TOKEN = _config.TOKEN end
+if not TOKEN then TOKEN = {
+  Ticker="ALT",
+  Process="zQ0DmjTbCEGNoJRcjdwdZTHt0UBorTeWbb_dnc6g41E",
+  Denomination=3,
+  Name="AolottoToken"
+} end
 
 --[[
   *******************
@@ -260,7 +265,7 @@ Handlers.add(
   "op.archive_round",
   function (msg)
     if msg.Tags.Action == const.Actions.archive_round then
-      if msg.From == OPERATOR or msg.From == ao.id then return true else return false
+      if msg.From == OPERATOR or msg.From == ao.id then return true else return false end
     else
       return false
     end  
@@ -291,7 +296,7 @@ Handlers.add(
   "op.changer_archiver",
   function (msg)
     if msg.Tags.Action == const.Actions.change_archiver then
-      if msg.From == OPERATOR or msg.From == ao.id then return true else return false
+      if msg.From == OPERATOR or msg.From == ao.id then return true else return false end
     else
       return false
     end  
