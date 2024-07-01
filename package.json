@@ -10,7 +10,8 @@
 		"SHOOTER": "aos CV8e1PX-ucDkhWGORDog8Fs40kI83R4UilxMNrCyjkM --wallet wallet.json",
 		"ARCHIVER": "aos oLpLgagYMdxJxeW9bwxikQyGBK-i8pZwCc81UBVOVKg --wallet wallet.json",
 		"OPERATOR": "aos KaQB3mNdZmZr69-9uTLJRw1_QGjJzAQr6GufCPwi4kQ --wallet wallet.json",
-		"NewArchiver": "node deploy/new_archiver.js"
+		"NewArchiver": "node deploy/new_archiver.js",
+		"FAUCET": "aos Uayk23GMTiYHLCR8f-qKNhMmaybSFnpvwpephGeFZPI --wallet wallet.json"
 	},
 	"author": "yeshua.ar",
 	"license": "ISC",

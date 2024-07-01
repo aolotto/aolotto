@@ -12,6 +12,7 @@ Const.Actions = {
   claim = "Claim",
   OP_withdraw = "OP_withdraw",
   x_transfer_type = "X-Transfer-Type",
+  x_faucet_order = 'X-Faucet-Order',
   shoot = "Shoot",
   change_shooter = "ChangeShooter",
   change_archiver = "ChangeArchiver",
