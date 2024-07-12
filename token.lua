@@ -57,11 +57,12 @@ Variant = "0.0.3"
 
 -- token should be idempotent and not change previous state updates
 Denomination = Denomination or 3
-Balances = Balances or { [ao.id] = utils.toBalanceValue(10000 * 10 ^ Denomination) }
-TotalSupply = TotalSupply or utils.toBalanceValue(10000 * 10 ^ Denomination)
-Name = Name or 'AolottoToken'
+Balances = Balances or { [ao.id] = utils.toBalanceValue(210000000 * 10 ^ Denomination) }
+TotalSupply = TotalSupply or utils.toBalanceValue(210000000 * 10 ^ Denomination)
+MaxSupply = MaxSupply or utils.toBalanceValue(210000000 * 10 ^ Denomination)
+Name = Name or 'altoken'
 Ticker = Ticker or 'ALT'
-Logo = Logo or 'Pgcwy3W4emNSod-BcFWWNZT1ASAKcEuTDJxN81Aj7Hs'
+Logo = Logo or '3u9Hr7xL02QjVikyY7i3o7ZiRMdoJqr3eQDzT6SOz1s'
 
 --[[
      Add handlers for each incoming Action defined by the ao Standard Token Specification
@@ -73,13 +74,17 @@ Logo = Logo or 'Pgcwy3W4emNSod-BcFWWNZT1ASAKcEuTDJxN81Aj7Hs'
    ]]
 --
 Handlers.add('info', Handlers.utils.hasMatchingTag('Action', 'Info'), function(msg)
-  ao.send({
+  local message = {
     Target = msg.From,
     Name = Name,
     Ticker = Ticker,
     Logo = Logo,
     Denomination = tostring(Denomination)
-  })
+  }
+  if MaxSupply then
+    message['MaxSupply'] = tostring(MaxSupply)
+  end
+  ao.send(message)
 end)
 
 --[[
@@ -187,16 +192,28 @@ end)
 Handlers.add('mint', Handlers.utils.hasMatchingTag('Action', 'Mint'), function(msg)
   assert(type(msg.Quantity) == 'string', 'Quantity is required!')
   assert(bint(0) < bint(msg.Quantity), 'Quantity must be greater than zero!')
+  if MaxSupply and utils.toNumber(MaxSupply) > 0 then
+    assert(bint(MaxSupply) > bint(TotalSupply), 'The total supply has reached its maximum limit!')
+  end
 
   if not Balances[ao.id] then Balances[ao.id] = "0" end
-
+  
   if msg.From == ao.id then
     -- Add tokens to the token pool, according to Quantity
-    Balances[msg.From] = utils.add(Balances[msg.From], msg.Quantity) 
-    TotalSupply = utils.add(TotalSupply, msg.Quantity)
+    local Quantity = msg.Quantity
+    if MaxSupply and utils.toNumber(MaxSupply) > 0 then
+      Quantity = tostring( 
+        math.min(
+          bint(msg.Quantity), 
+          bint(MaxSupply)-bint(TotalSupply) 
+        ) 
+      )
+    end
+    Balances[msg.From] = utils.add(Balances[msg.From], Quantity) 
+    TotalSupply = utils.add(TotalSupply, Quantity)
     ao.send({
       Target = msg.From,
-      Data = Colors.gray .. "Successfully minted " .. Colors.blue .. msg.Quantity .. Colors.reset
+      Data = Colors.gray .. "Successfully minted " .. Colors.blue .. Quantity .. Colors.reset
     })
   else
     ao.send({
@@ -222,6 +239,7 @@ Handlers.add('totalSupply', Handlers.utils.hasMatchingTag('Action', 'Total-Suppl
     Ticker = Ticker
   })
 end)
+
 
 --[[
  Burn

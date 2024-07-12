@@ -7,15 +7,22 @@
 	"scripts": {
 		"init_processes": "node deploy/main.js",
 		"AGENT": "aos G0cupCsndbBT1DAf_VEnv_oW-b8oxIGLvADC0J3wtrM --wallet wallet.json",
+		"AGENT2": "aos zGb1iIUsPrKyCVRR5znFSDvJCMY18qBJX7Y8RyH5Xi8",
+		"A3": "aos b5FS1pCBGkytHQstkwYvBHhH-c1dydjJ3iE-Db_KGwQ",
 		"SHOOTER": "aos CV8e1PX-ucDkhWGORDog8Fs40kI83R4UilxMNrCyjkM --wallet wallet.json",
 		"ARCHIVER": "aos oLpLgagYMdxJxeW9bwxikQyGBK-i8pZwCc81UBVOVKg --wallet wallet.json",
 		"OPERATOR": "aos KaQB3mNdZmZr69-9uTLJRw1_QGjJzAQr6GufCPwi4kQ --wallet wallet.json",
 		"NewArchiver": "node deploy/new_archiver.js",
-		"FAUCET": "aos Uayk23GMTiYHLCR8f-qKNhMmaybSFnpvwpephGeFZPI --wallet wallet.json"
+		"FAUCET": "aos Uayk23GMTiYHLCR8f-qKNhMmaybSFnpvwpephGeFZPI --wallet wallet.json",
+		"create-process": "aos echo \"${npm_config_name}\" --wallet wallet.json",
+		"view": "echo \"${npm_config_host}\" & echo \"${npm_config_port}\"",
+		"aolotto" : "aos a1Lr8aT5MVr9I9-MdHGssHLKadi_3jaDaKriw5a7qtQ --wallet wallet.json"
 	},
 	"author": "yeshua.ar",
 	"license": "ISC",
 	"dependencies": {
-		"@permaweb/aoconnect": "^0.0.56"
+		"@permaweb/aoconnect": "^0.0.56",
+		"dotenv": "^16.4.5",
+		"minimist": "^1.2.8"
 	}
 }

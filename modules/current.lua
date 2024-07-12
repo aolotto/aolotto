@@ -44,15 +44,16 @@ function Current:saveBets(bets,msg)
 
 end
 
-function Current:new(timestamp)
+function Current:new(msg)
 
-  local expired = timestamp >= self.start_time + self.duration * 7
+  local expired = msg.Timestamp >= self.start_time + self.duration * 7
   self.no = tostring(tonumber(self.no)+1)
   self.base_rewards = expired and self.base_rewards or math.floor((self.base_rewards+self.bets_amount) * 0.5)
   self.participants = 0
   self.bets_count = 0
   self.bets_amount = 0
-  self.start_time = timestamp
+  self.start_time = msg.Timestamp
+  self.start_height = msg['Block-Height']
   self.logs = {}
   self.bets = {}
   self.statistics = {}
@@ -60,13 +61,14 @@ function Current:new(timestamp)
 end
 
 
-function Current:archive(timestamp)
+function Current:archive(msg)
   local archive = {}
   for key,val in pairs(self) do
     archive[key] = val
   end
-  archive.end_time = timestamp
-  archive.status = (timestamp >= archive.start_time + archive.duration * 7) and -1 or 1
+  archive.end_time = msg.Timestamp
+  archive.end_height = msg['Block-Height']
+  archive.status = (msg.Timestamp >= archive.start_time + archive.duration * 7) and -1 or 1
   return archive
 end 
 

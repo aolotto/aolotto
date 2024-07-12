@@ -3,25 +3,23 @@
   Global constants and module imports
   *******************
 ]]--
-local _config = require("_config")
 local const = require("modules.const")
 local messenger = require("modules.messenger")
 local utils = require(".utils")
 local crypto = require(".crypto")
 local json = require("json")
 local bint = require('.bint')(256)
+local drive = require("modules.drive")
+local token_config = {
+  Ticker = Inbox[1].Ticker or "ALT",
+  Process = Inbox[1].Token or "zQ0DmjTbCEGNoJRcjdwdZTHt0UBorTeWbb_dnc6g41E",
+  Denomination =  tonumber(Inbox[1].Denomination) or 3,
+  Name = Inbox[1].Tokenname or "altoken"
+}
 
-
-if not NAME then NAME = "aolotto" end
-if not VERSION then VERSION = "dev" end
-if not SHOOTER then SHOOTER = _config.SHOOTER end
-if not OPERATOR then OPERATOR = _config.OPERATOR end
-if not TOKEN then TOKEN = {
-  Ticker="ALT",
-  Process="zQ0DmjTbCEGNoJRcjdwdZTHt0UBorTeWbb_dnc6g41E",
-  Denomination=3,
-  Name="AolottoToken"
-} end
+if not NAME then NAME = Name or "aolotto" end
+if not OPERATOR then OPERATOR = Owner end
+if not TOKEN then TOKEN = token_config end
 
 --[[
   *******************
@@ -60,10 +58,6 @@ if not STATE then STATE = {
   total_claim_paid = 0
 } end
 setmetatable(STATE,{__index=require("modules.state")})
---[[
-  投注统计
-]] --
-
 
 --[[
   轮次
@@ -73,14 +67,16 @@ if not CURRENT then CURRENT = {
   logs={},
   statistics={},
   no="1",
-  duration = 86400000,
+  duration = tonumber(Inbox[1].Tags.Duration) or 86400000,
   start_time = Inbox[1].Timestamp,
+  start_height = Inbox[1]['Block-Height'],
   base_rewards = 0,
   bets_count=0,
   status = 0,
   bets_amount = 0,
   participants = 0,
   end_time = nil,
+  buff = 0
 } end
 setmetatable(CURRENT,{__index=require("modules.current")})
 
@@ -129,7 +125,7 @@ Handlers.add(
       assert(type(msg.Quantity) == 'string', 'Quantity is required!')
       assert(msg.Sender ~= OPERATOR, "Operator is not available on betting")
 
-      -- 如过当前不在运行状态，突患用户款项
+      -- 如过当前不在运行状态，退还用户款项
       if STATE.run ~= 1 then REFUNDS:rejectToken(msg) return end
 
       -- 判断是否为当前轮次的新参与者
@@ -208,12 +204,16 @@ Handlers.add(
     xpcall(function (msg)
       assert(CURRENT.bets_amount >= CURRENT.base_rewards, "amount not reached")
       assert(msg.Timestamp >= (CURRENT.start_time + CURRENT.duration), "amount not reached")
-      local archive = CURRENT:archive(msg.Timestamp)
+      local archive = CURRENT:archive(msg)
       ARCHIVES:add(archive)
       -- 重置轮次信息
-      CURRENT:new(msg.Timestamp)
-      -- 触发抽奖
-      ao.send({Target=ao.id, Action="Draw",Round=tostring(archive.no)})
+      CURRENT:new(msg)
+      -- 通知所有用户轮次切换
+      local assignments = utils.map(
+        function (val, key) return val.id end,
+        USERS:queryAllusers()
+      )
+      messenger:sendRoundSwitchNotice(CURRENT,assignments,TOKEN)
     end,function (err)
       print(err)
     end,msg)
@@ -231,13 +231,16 @@ Handlers.add(
   function(msg)
     xpcall(function (msg)
       assert(msg.Tags.Round~=nil,"missd Round tag")
-      local bets_amount = 0
-      local bets = {}
-      if ARCHIVES.repo[msg.Tags.Round] then
-        bets_amount = ARCHIVES.repo[msg.Tags.Round].bets_amount
-        bets = ARCHIVES.repo[msg.Tags.Round].bets
-      end
-      local win_num = TOOLS:getRandomNumber( string.format("%s_%d_%d",msg.Tags.Round, msg.Timestamp, bets_amount ),3)
+      assert(ARCHIVES.repo[msg.Tags.Round]~=nil, 'Target Round are not archived!')
+      local round = ARCHIVES.repo[msg.Tags.Round]
+      assert(round.end_height <= msg['Block-Height']-5, 'Draw time has not yet arrived.')
+      local block = drive.getBlock(tostring(round.end_height+5))
+      assert(block ~= nil, "Lucky block does not exist")
+      local bets_amount = round.bets_amount
+      local bets = round.bets
+      local participants = round.participants
+      local seed = ao.id .. round.no .. block.hash .. tostring(bets_amount) .. tostring(participants)
+      local win_num = TOOLS:getDrawNumber(seed,3)
       local winners, rewards = ARCHIVES:draw(msg.Tags.Round, win_num)
       if rewards > 0 then
         if #winners > 0 then
@@ -260,62 +263,6 @@ Handlers.add(
 
 
 --[[ 更新归档 ]]
-
-Handlers.add(
-  "op.archive_round",
-  function (msg)
-    if msg.Tags.Action == const.Actions.archive_round then
-      if msg.From == OPERATOR or msg.From == ao.id then return true else return false end
-    else
-      return false
-    end  
-  end,
-  function (msg)
-    xpcall(function (msg)
-      print("archive start")
-      assert(msg.Tags.Round ~= nil, "missed round tag.")
-      assert(msg.Tags.Archiver ~= nil, "missed archiver tag.")
-      local archive = ARCHIVES.repo[tostring(msg.Tags.Round)]
-      if archive then
-        assert(archive.archived == nil or  archive.archived == false,"already archived.")
-        ao.send({
-          Target = msg.Tags.Archiver,
-          Action = const.Actions.archive_round,
-          Round = msg.Tags.Round,
-          Data = json.encode(archive)
-        })
-        ARCHIVES.repo[msg.Tags.Round].archiver = msg.Tags.Archiver
-      end
-    end,function (err)
-      print(err)
-    end,msg)
-  end
-)
-
-Handlers.add(
-  "op.changer_archiver",
-  function (msg)
-    if msg.Tags.Action == const.Actions.change_archiver then
-      if msg.From == OPERATOR or msg.From == ao.id then return true else return false end
-    else
-      return false
-    end  
-  end,
-  function (msg)
-    xpcall(function (msg)
-      print("change archiver")
-      assert(msg.Tags.Round ~= nil, "missed round tag.")
-      assert(msg.Tags.Archiver ~= nil, "missed archiver tag.")
-      local archive = ARCHIVES.repo[tostring(msg.Tags.Round)]
-      if archive then
-        ARCHIVES.repo[msg.Tags.Round].archiver = msg.Tags.Archiver
-      end
-    end,function (err)
-      print(err)
-    end,msg)
-  end
-)
-
 
 Handlers.add(
   "_round_archived",
@@ -460,7 +407,7 @@ Handlers.add(
         Quantity = tostring(qty),
         [const.Actions.x_transfer_type] = const.Actions.claim,
         [const.Actions.x_amount] = tostring(user.rewards_balance),
-        [const.Actions.x_tax] = tostring(TAX_RATE),
+        [const.Actions.x_tax] = tostring(STATE.tax_rete),
         [const.Actions.x_pushed_for] = msg["Pushed-For"]
       }
       ao.send(message)
@@ -492,6 +439,7 @@ Handlers.add(
       STATE:decreasePoolBalance(msg.Quantity)
       -- 增加奖励总额
       STATE:increaseClaimPaid(msg.Quantity)
+      messenger:sendClaimNotice(msg,TOKEN)
     end,function (err)
       print(err)
       messenger:sendError(err,OPERATOR)
@@ -499,62 +447,118 @@ Handlers.add(
   end
 )
 
--- -- [[ 运营方提现 ]]
--- Handlers.add(
---   "OP.withdraw",
---   function(msg) 
---     if msg.From == OPERATOR and msg.Action == const.Actions.OP_withdraw then return true else return false end
---   end,
---   function (msg)
---     xpcall(function (msg)
---       local TOKEN_PROCESS = msg.Tags.Token or TOKEN.Process
---       local is_rewards_token = TOKEN_PROCESS == TOKEN.Process
---       if is_rewards_token then
---         assert(math.floor(STATE.operator_balance) >= 1, "Insufficient withdrawal amount")
---         local message = {
---           Target = TOKEN_PROCESS,
---           Quantity = tostring(math.floor(STATE.operator_balance)),
---           Recipient = msg.From,
---           Action = "Transfer",
---           [const.Actions.x_transfer_type] = const.Actions.OP_withdraw,
---           [const.Actions.x_pushed_for] = msg["Pushed-For"]
---         }
---         ao.send(message)
---       else
---         local message = {
---           Target = TOKEN_PROCESS,
---           Quantity = msg.Tags.Quantity or "",
---           Recipient = msg.From,
---           Action = "Transfer"
---         }
---         ao.send(message)
---       end
+-- [[ 运营方提现接口 ]]
+Handlers.add(
+  "op.withdraw",
+  function(msg) 
+    if msg.From == OPERATOR and msg.Action == const.Actions.OP_withdraw then return true else return false end
+  end,
+  function (msg)
+    xpcall(function (msg)
+      local TOKEN_PROCESS = msg.Tags.Token or TOKEN.Process
+      local is_rewards_token = TOKEN_PROCESS == TOKEN.Process
+      if is_rewards_token then
+        assert(math.floor(STATE.operator_balance) >= 1, "Insufficient withdrawal amount")
+        local message = {
+          Target = TOKEN_PROCESS,
+          Quantity = tostring(math.floor(STATE.operator_balance)),
+          Recipient = msg.From,
+          Action = "Transfer",
+          [const.Actions.x_transfer_type] = const.Actions.OP_withdraw,
+          [const.Actions.x_pushed_for] = msg["Pushed-For"]
+        }
+        ao.send(message)
+      else
+        local message = {
+          Target = TOKEN_PROCESS,
+          Quantity = msg.Tags.Quantity or "",
+          Recipient = msg.From,
+          Action = "Transfer"
+        }
+        ao.send(message)
+      end
       
---     end,function (err)
---       print(err)
---       messenger:sendError(err,msg.From)
---     end,msg)
---   end
--- )
--- Handlers.add(
---   "OP._debit_op_withdraw",
---   function (msg)
---     local triggered = msg.From == TOKEN.Process and msg.Tags.Action == "Debit-Notice" and msg.Tags[const.Actions.x_transfer_type] == const.Actions.OP_withdraw
---     if triggered then return true else return false end
---   end,
---   function (msg)
---     xpcall(function (msg)
---       STATE:decreaseOperatorBalance(msg.Quantity)
---       STATE:decreasePoolBalance(msg.Quantity)
---       STATE:increaseWithdraw(msg.Quantity)
---     end,function (err)
---       print(err)
---       messenger:sendError(err,OPERATOR)
---     end,msg)
---   end
--- )
+    end,function (err)
+      print(err)
+      messenger:sendError(err,msg.From)
+    end,msg)
+  end
+)
+Handlers.add(
+  "op._debit_op_withdraw",
+  function (msg)
+    local triggered = msg.From == TOKEN.Process and msg.Tags.Action == "Debit-Notice" and msg.Tags[const.Actions.x_transfer_type] == const.Actions.OP_withdraw
+    if triggered then return true else return false end
+  end,
+  function (msg)
+    xpcall(function (msg)
+      STATE:decreaseOperatorBalance(msg.Quantity)
+      STATE:decreasePoolBalance(msg.Quantity)
+      STATE:increaseWithdraw(msg.Quantity)
+    end,function (err)
+      print(err)
+      messenger:sendError(err,OPERATOR)
+    end,msg)
+  end
+)
 
--- --[[ 运营方管理 ]]
+
+Handlers.add(
+  "op.archive_round",
+  function (msg)
+    if msg.Tags.Action == const.Actions.archive_round then
+      if msg.From == OPERATOR or msg.From == ao.id then return true else return false end
+    else
+      return false
+    end  
+  end,
+  function (msg)
+    xpcall(function (msg)
+      print("archive start")
+      assert(msg.Tags.Round ~= nil, "missed round tag.")
+      assert(msg.Tags.Archiver ~= nil, "missed archiver tag.")
+      local archive = ARCHIVES.repo[tostring(msg.Tags.Round)]
+      if archive then
+        assert(archive.archived == nil or  archive.archived == false,"already archived.")
+        ao.send({
+          Target = msg.Tags.Archiver,
+          Action = const.Actions.archive_round,
+          Round = msg.Tags.Round,
+          Data = json.encode(archive)
+        })
+        ARCHIVES.repo[msg.Tags.Round].archiver = msg.Tags.Archiver
+      end
+    end,function (err)
+      print(err)
+    end,msg)
+  end
+)
+
+Handlers.add(
+  "op.changer_archiver",
+  function (msg)
+    if msg.Tags.Action == const.Actions.change_archiver then
+      if msg.From == OPERATOR or msg.From == ao.id then return true else return false end
+    else
+      return false
+    end  
+  end,
+  function (msg)
+    xpcall(function (msg)
+      print("change archiver")
+      assert(msg.Tags.Round ~= nil, "missed round tag.")
+      assert(msg.Tags.Archiver ~= nil, "missed archiver tag.")
+      local archive = ARCHIVES.repo[tostring(msg.Tags.Round)]
+      if archive then
+        ARCHIVES.repo[msg.Tags.Round].archiver = msg.Tags.Archiver
+      end
+    end,function (err)
+      print(err)
+    end,msg)
+  end
+)
+
+-- --[[ 运营方管理接口 ]]
 -- Handlers.add(
 --   "OP.changeShooter",
 --   function(msg)
@@ -646,7 +650,9 @@ Handlers.add(
   end,
   function (msg)
     assert(msg.Timestamp >= CURRENT.start_time + CURRENT.duration, "Time not reached." )
-    local expired = (CURRENT.start_time or 0) + (CURRENT.duration*7)
+    local expired = msg.Timestamp >= CURRENT.start_time + CURRENT.duration*7
+    -- print("是否过期"..tostring(expired))
+    -- print("金额是否满足"..tostring(CURRENT.bets_amount >= CURRENT.base_rewards))
     if expired or CURRENT.bets_amount >= CURRENT.base_rewards then
       Send({
         Target=ao.id,
@@ -682,4 +688,47 @@ Handlers.add(
 --   end
 -- )
 
+Handlers.add(
+  "_getBlockHash",
+  Handlers.utils.hasMatchingTag("Action","GetBlockHash"),
+  function(msg)
+    xpcall(function (msg)
+      print("Get block hash")
+      assert(msg.Tags.Height ~= nil, "missed Height tag.")
+      local drive = drive or require("modules.drive")
+      local block = drive.getBlock(msg.Tags.Height)
+      print(block.hash)
+    end,function (err)
+      print(err)
+    end,msg)
+  end
+)
 
+Handlers.add(
+  "CronTick",
+  Handlers.utils.hasMatchingTag("Action", "Cron"),
+  function (msg)
+    print(CURRENT.base_rewards)
+    -- 检查当前轮次是否结束
+    if msg.Timestamp >= CURRENT.start_time + CURRENT.duration then
+      if CURRENT.bets_amount >= CURRENT.base_rewards or msg.Timestamp >= CURRENT.start_time + CURRENT.duration * 7 then
+        ao.send({
+          Target=ao.id,
+          Action=const.Actions.finish,
+        })
+      end
+    end
+    -- 触发开奖
+    if CURRENT.no > 1 then
+      local prev_no = tostring(tonumber(CURRENT.no)-1)
+      assert(ARCHIVES.repo[prev_no]~=nil,"round not exist")
+      if not ARCHIVES.repo[prev_no].drawn then
+        if msg['Block-Height'] >= ARCHIVES.repo[prev_no].end_height + 5 then
+          print("触发开奖")
+        end
+        
+      end
+      -- local prev_round = ARCHIVES.repo[prev_no]
+    end
+  end
+)

@@ -122,4 +122,38 @@ function Messenger:sendRoundInfo (round,token,msg)
 
 end
 
+function Messenger:sendRoundSwitchNotice(current,assignments,token)
+  local message = {
+    Target = ao.id,
+    Action = const.Actions.round_notice,
+    Round = current.no,
+    ['Base-Rewards'] = tostring(current.base_rewards),
+    ['Start-Time'] = tostring(current.start_time),
+    ['Duration'] = tostring(current.duration),
+    ['Token'] = token.Process,
+    Data = string.format("aolotto Round %s has just launched with a base reward of %s %s! Participate now for a chance to win big!",current.no, tools:toBalanceValue(current.base_rewards,token.Denomination),token.Ticker),
+    Assignments = assignments
+  }
+  ao.send(message)
+end
+
+function Messenger:sendClaimNotice(msg,token)
+  local message = {
+    Target = msg.Recipient,
+    Action = const.Actions.claim_notice,
+    Quantity = tostring(msg.Tags.Quantity),
+    [const.Actions.x_amount] = msg.Tags[const.Actions.x_amount],
+    [const.Actions.x_tax] = msg.Tags[const.Actions.x_tax],
+    Data = string.format(
+      "Successfully claimed rewards of %s %s. After deducting the %s % withdrawal tax, the actual amount received is %s %s",
+      tools:toBalanceValue(tonumber(msg.Tags[const.Actions.x_amount]),token.Denomination),
+      token.Ticker,
+      tostring(tonumber(msg.Tags[const.Actions.x_tax])*100),
+      tools:toBalanceValue(tonumber(msg.Tags.Quantity),token.Denomination),
+      token.Ticker
+    )
+  }
+  ao.send(message)
+end
+
 return Messenger

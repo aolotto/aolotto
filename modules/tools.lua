@@ -21,6 +21,15 @@ function tools:getRandomNumber(seed,len)
   return numbers
 end
 
+function tools:getDrawNumber(seed,len)
+  local numbers = ""
+  for i = 1, len or 3 do
+    local n = crypto.cipher.issac.random(0, 9, tostring(i)..seed..numbers)
+    numbers = numbers .. n
+  end
+  return numbers
+end
+
 function tools:parseStringToBets(str, limit)
   local char = string.match(str, "[%p%s]")
   -- 判断字符串是否为数值
@@ -125,7 +134,6 @@ end
 
 function tools:messageToBets(msg)
   local numbers_str = msg.Tags[const.Actions.x_numbers] or self:getRandomNumber(msg.Id..tostring(msg.Timestamp),3)
-  print(numbers_str)
   local bet_num_tbl = self:parseStringToBets(numbers_str,tonumber(msg.Quantity))
   if not bet_num_tbl then
     local key = self:getRandomNumber(msg.Id,3)

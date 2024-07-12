@@ -35,7 +35,9 @@ Const.Actions = {
   matched_bets = "Matched-Bets",
   percent = "Percent",
   change_archiver = "Change-Archiver",
-  x_user = "X-User"
+  x_user = "X-User",
+  round_notice = "Round-Notice",
+  claim_notice = "Claim-Notice"
 }
 
 Const.RoundStatus = {
