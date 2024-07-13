@@ -19,7 +19,7 @@ function Archives:draw( no, win_num )
   
   if not expired then
 
-    rewards = math.floor( (archive.base_rewards + archive.bets_amount) * 0.5 )
+    rewards = math.floor( (archive.base_rewards + archive.bets_amount) * 0.5 ) + (archive.buff or 0)
     
     for key, value in pairs(archive.bets) do
       if value.numbers[win_num] then

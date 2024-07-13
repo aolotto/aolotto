@@ -19,6 +19,7 @@ Const.Actions = {
   round_archived = "Round-Archived",
   pause_round = "Pause-Round",
   round_restart = "Restart-Round",
+  round_start = "Start-Round",
   refund = "Refund",
   x_amount = "X-Amount",
   x_tax = "X-Tax",
@@ -37,7 +38,10 @@ Const.Actions = {
   change_archiver = "Change-Archiver",
   x_user = "X-User",
   round_notice = "Round-Notice",
-  claim_notice = "Claim-Notice"
+  claim_notice = "Claim-Notice",
+  draw="Draw",
+  add_buff = "Add-Buff",
+  sponsor = "Sponsor"
 }
 
 Const.RoundStatus = {

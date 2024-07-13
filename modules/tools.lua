@@ -147,4 +147,14 @@ function tools:messageToBets(msg)
   return bets
 end
 
+function tools:operatingMatch(msg,k,v)
+  return function(msg)
+    if msg.Action == v then
+      if msg.From == OPERATOR or msg.From == ao.id then return true else return false end
+    else
+      return false
+    end 
+  end
+end
+
 return tools

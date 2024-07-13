@@ -1,12 +1,16 @@
 local const = require("modules.const")
 local messenger = require("modules.messenger")
-local _config = require("_config")
 local utils = require(".utils")
 local json = require("json")
-if not AGENT then  AGENT = _config.AGENT end
-if not TOKEN then TOKEN =  _config.TOKEN end
-if not utils.includes(AGENT, ao.authorities) then table.insert(ao.authorities,AGENT) end
+local token_config = {
+  Ticker = Inbox[1].Ticker or "ALT",
+  Process = Inbox[1].Token or "zQ0DmjTbCEGNoJRcjdwdZTHt0UBorTeWbb_dnc6g41E",
+  Denomination =  tonumber(Inbox[1].Denomination) or 3,
+  Name = Inbox[1].Tokenname or "altoken"
+}
 
+if not AGENT then  AGENT = Inbox[1].Lottery end
+if not TOKEN then TOKEN = token_config end
 
 
 local _archive = {}

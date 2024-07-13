@@ -48,7 +48,7 @@ end
   全局状态对象
 ]] --
 if not STATE then STATE = {
-  run = 1,
+  run = 0,
   pool_balance = 0,
   total_pool_balance = 0,
   operator_balance = 0,
@@ -112,7 +112,11 @@ setmetatable(REFUNDS,{__index=require("modules.refund")})
 Handlers.add(
   '_credit_bet',
   function (msg)
-    if msg.From == TOKEN.Process and msg.Tags.Action == "Credit-Notice" and msg.Sender ~= TOKEN.Process then
+    if msg.From == TOKEN.Process 
+      and msg.Tags.Action == "Credit-Notice" 
+      and msg.Sender ~= TOKEN.Process 
+      and msg.Tags[const.Actions.x_transfer_type] ~= const.Actions.sponsor
+    then
       return true
     else
       return false
@@ -192,6 +196,32 @@ Handlers.add(
   end
 )
 
+--[[ 奖金赞助 ]]
+Handlers.add(
+  '_credit_sponsor',
+  function (msg)
+    if msg.From == TOKEN.Process 
+      and msg.Tags.Action == "Credit-Notice" 
+      and msg.Tags[const.Actions.x_transfer_type] == const.Actions.sponsor
+    then
+      return true
+    else
+      return false
+    end
+  end,
+  function (msg)
+    xpcall(function (msg)
+      assert(type(msg.Quantity) == 'string', 'Quantity is required!')
+      CURRENT.buff = (CURRENT.buff or 0) + tonumber(msg.Quantity)
+    end,function(err)
+      print(err)
+      messenger:sendError(err,msg.Tags.Sender)
+    end, msg)
+  end
+)
+
+
+
 --[[ 结束轮次 ]]
 
 Handlers.add(
@@ -226,7 +256,7 @@ Handlers.add(
   "_draw",
   function (msg)
     local is_operator = msg.From == OPERATOR or msg.From == ao.id
-    if is_operator and msg.Tags.Action == "Draw" then return true else return false end
+    if is_operator and msg.Tags.Action == const.Actions.draw then return true else return false end
   end,
   function(msg)
     xpcall(function (msg)
@@ -558,157 +588,87 @@ Handlers.add(
   end
 )
 
--- --[[ 运营方管理接口 ]]
--- Handlers.add(
---   "OP.changeShooter",
---   function(msg)
---     if msg.From == OPERATOR and msg.Tags.Action == const.Actions.change_shooter then return true else return false end
---   end,
---   function(msg)
---     xpcall(
---       function(msg)
---         print("改变触发器")
---         assert(msg.Shooter ~= nil ,"Missed shooter tag." )
---         SHOOTER = msg.Shooter
---       end,
---       function(err)
---         print(err)
---         messenger:sendError(err,msg.From)
---       end,
---       msg
---     )
---   end
--- )
-
--- Handlers.add(
---   "OP.changeArchiver",
---   function(msg)
---     if msg.From == OPERATOR and msg.Tags.Action == const.Actions.change_archiver then return true else return false end
---   end,
---   function(msg)
---     xpcall(
---       function(msg)
---         assert(msg.Archiver ~= nil ,"Missed Archiver tag." )
---         ARCHIVER = msg.Archiver
---       end,
---       function(err)
---         print(err)
---         messenger:sendError(err,msg.From)
---       end,
---       msg
---     )
---   end
--- )
-
--- Handlers.add(
---   "OP.pause",
---   function(msg)
---     if msg.From == OPERATOR and msg.Tags.Action == const.Actions.pause_round then return true else return false end
---   end,
---   function(msg)
---     xpcall(
---       function(msg)
---         STATE:set("run",0)
---         STATE:set("pause_start",msg.Timestamp)
---       end,
---       function(err)
---         print(err)
---         messenger:sendError(err,msg.From)
---       end,
---       msg
---     )
---   end
--- )
-
--- Handlers.add(
---   "OP.restart",
---   function(msg)
---     if msg.From == OPERATOR and msg.Tags.Action == const.Actions.round_restart then return true else return false end
---   end,
---   function(msg)
---     xpcall(
---       function(msg)
---         STATE:set("run",1)
---         STATE:set("pause_end",msg.Timestamp)
---       end,
---       function(err)
---         print(err)
---         messenger:sendError(err,msg.From)
---       end,
---       msg
---     )
---   end
--- )
 
 
--- [[ 开奖触发器 ]]
+
 
 Handlers.add(
-  "_shoot",
-  function (msg)
-    if msg.From == SHOOTER and msg.Action == const.Actions.shoot then return true else return false end
-  end,
-  function (msg)
-    assert(msg.Timestamp >= CURRENT.start_time + CURRENT.duration, "Time not reached." )
-    local expired = msg.Timestamp >= CURRENT.start_time + CURRENT.duration*7
-    -- print("是否过期"..tostring(expired))
-    -- print("金额是否满足"..tostring(CURRENT.bets_amount >= CURRENT.base_rewards))
-    if expired or CURRENT.bets_amount >= CURRENT.base_rewards then
-      Send({
-        Target=ao.id,
-        Action=const.Actions.finish
-      })
-    end  
-  end
-)
-
-
--- --[[ 查询历史轮次 ]]
-
--- Handlers.add(
---   "fetchRounds",
---   Handlers.utils.hasMatchingTag("Action",const.Actions.rounds),
---   function (msg)
---     local data_str = ""
---     local request_type = msg[const.Actions.request_type] or ""
---     if request_type == "json" then
---       data_str = json.encode(ROUNDS.repo)
---     else
---       table.sort(ROUNDS.repo,function (a,b) return a.no > b.no end)
---       for i, v in ipairs(ROUNDS.repo) do
---         data_str = data_str..string.format("%4d : %s \n",v.no, v.process)
---       end
---     end
---     local msssage = {
---       Target = msg.From,
---       Action = const.Actions.reply_rounds,
---       Data = data_str
---     }
---     ao.send(msssage)
---   end
--- )
-
-Handlers.add(
-  "_getBlockHash",
-  Handlers.utils.hasMatchingTag("Action","GetBlockHash"),
+  "op.add_buff",
+  TOOLS:operatingMatch(msg,"Action",const.Actions.add_buff),
   function(msg)
-    xpcall(function (msg)
-      print("Get block hash")
-      assert(msg.Tags.Height ~= nil, "missed Height tag.")
-      local drive = drive or require("modules.drive")
-      local block = drive.getBlock(msg.Tags.Height)
-      print(block.hash)
-    end,function (err)
-      print(err)
-    end,msg)
+    print("do add buff")
+  end
+)
+
+
+Handlers.add(
+  "OP.pause",
+  function(msg)
+    if msg.From == OPERATOR and msg.Tags.Action == const.Actions.pause_round then return true else return false end
+  end,
+  function(msg)
+    xpcall(
+      function(msg)
+        STATE:set("run",0)
+        STATE:set("pause_start",msg.Timestamp)
+      end,
+      function(err)
+        print(err)
+        messenger:sendError(err,msg.From)
+      end,
+      msg
+    )
   end
 )
 
 Handlers.add(
-  "CronTick",
+  "op.restart",
+  function(msg)
+    if msg.From == OPERATOR and msg.Tags.Action == const.Actions.round_restart then return true else return false end
+  end,
+  function(msg)
+    xpcall(
+      function(msg)
+        STATE:set("run",1)
+        STATE:set("pause_end",msg.Timestamp)
+      end,
+      function(err)
+        print(err)
+        messenger:sendError(err,msg.From)
+      end,
+      msg
+    )
+  end
+)
+
+Handlers.add(
+  "op.start",
+  function(msg)
+    if msg.From == OPERATOR and msg.Tags.Action == const.Actions.round_start then return true else return false end
+  end,
+  function(msg)
+    xpcall(
+      function(msg)
+        STATE:set("run",1)
+        STATE:set("start_time",msg.Timestamp)
+        STATE:set("start_height",msg['Block-Height'])
+      end,
+      function(err)
+        print(err)
+        messenger:sendError(err,msg.From)
+      end,
+      msg
+    )
+  end
+)
+
+
+--[[开奖触发]]
+
+Handlers.add(
+  "_cron",
   Handlers.utils.hasMatchingTag("Action", "Cron"),
   function (msg)
-    print(CURRENT.base_rewards)
     -- 检查当前轮次是否结束
     if msg.Timestamp >= CURRENT.start_time + CURRENT.duration then
       if CURRENT.bets_amount >= CURRENT.base_rewards or msg.Timestamp >= CURRENT.start_time + CURRENT.duration * 7 then
@@ -725,10 +685,15 @@ Handlers.add(
       if not ARCHIVES.repo[prev_no].drawn then
         if msg['Block-Height'] >= ARCHIVES.repo[prev_no].end_height + 5 then
           print("触发开奖")
+          ao.send({
+            Target=ao.id,
+            Action=const.Actions.draw,
+            Round=prev_no
+          })
         end
-        
       end
-      -- local prev_round = ARCHIVES.repo[prev_no]
     end
   end
 )
+
+
