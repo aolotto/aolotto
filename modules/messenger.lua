@@ -48,7 +48,7 @@ end
 function Messenger:sendWinNotice(no,winner,token)
   local rewards_str = tools:toBalanceValue(winner.rewards,token.Denomination)
   local data_str = string.format(
-    "Congrats! You've won %s %s, %s of total rewards in aolotto round %s. The winning number is [%s], and you have %d bets matched.",
+    "Congrats! You've won %s %s, %s of rewards in aolotto round %s. The winning number is [%s], and you have %d bets matched.",
     rewards_str,
     token.Ticker,
     tostring(winner.percent*100).."%",
@@ -89,37 +89,65 @@ function Messenger:sendRoundInfo (round,token,msg)
   local state_str = const.RoundStatus[round.status]
   local start_date_str = tools:timestampToDate(round.start_time,"%Y/%m/%d %H:%M")
   local end_date_str = tools:timestampToDate(round.end_time or round.start_time+round.duration,"%Y/%m/%d %H:%M")
-  local total_prize = tools:toBalanceValue((round.base_rewards + (round.bets_amount or 0)),token.Denomination)
+  local pool_balance = tools:toBalanceValue(round.base_rewards + (round.bets_amount or 0) + (round.buff or 0),token.Denomination)
+  local total_prize = tools:toBalanceValue(math.floor((round.base_rewards + (round.bets_amount or 0)) * 0.5) + (round.buff or 0),token.Denomination)
   local participants_str = tostring(round.participants or 0)
   local base_str = tostring(round.base_rewards)
   local bets_str = tostring(round.bets_amount or 0)
   local winners_str = tostring(0)
+  local win_num = round.win_num and tostring(round.win_num) or "Not drawn yet"
   if round.winners then
     winners_str = tostring(#round.winners)
   end
-  local tips_str = round.status ~= 0 and string.format("Drawn on %s UTC, %s winners.",end_date_str,winners_str) or string.format("draw on %s UTC if bets >= %s",end_date_str,base_str)
+  local tips_str = round.status ~= 0 and string.format("Ends at %s UTC, %s winners.",end_date_str,winners_str) or string.format("Ends at %s UTC if bets >= %s",end_date_str,base_str)
 
   str=  string.format([[
 
   -----------------------------------------      
-  aolotto Round %d - %s
+  aolotto Round %s - %s
   ----------------------------------------- 
-  * Total Prize:       %s %s
+  * Pool Balance:      %s %s
+  * Estimated Prize:   %s %s
   * Participants:      %s
   * Bets:              %s
   * Start at:          %s UTC
+  * Lucky Number:      %s
   ----------------------------------------- 
   %s
 
-    ]],tonumber(round.no),state_str,total_prize,token.Ticker or "AO",participants_str,bets_str,start_date_str,tips_str)
+    ]],
+    round.no,
+    state_str,
+    pool_balance,
+    token.Ticker or "AO",
+    total_prize,
+    token.Ticker or "AO",
+    participants_str,
+    bets_str,
+    start_date_str,
+    win_num,
+    tips_str
+  )
   end
   local message = {
     Target = msg.User or msg.From,
     Data = str,
     Action = "Reply-RoundInfo",
+    Tags = {
+      ["Round"] = round.no,
+      ["Start-Time"] = tostring(round.start_time),
+      ["End-Time"] = tostring(round.end_time),
+      ["Bets"] = tostring(round.bets_amount),
+      ["Base-Rewards"] = tostring(round.base_rewards),
+      ["Winners"] = tostring(#round.winners),
+      ["Buff"] = tostring(round.buff),
+      ["Status"] = tostring(round.status),
+      ["Lucky-Numbers"] = round.win_num and tostring(round.win_num) or nil,
+      ["Token"] = token.Process,
+      ["Participants"] = tostring(round.participants),
+    }
   }
   ao.send(message)
-
 end
 
 function Messenger:sendRoundSwitchNotice(current,assignments,token)

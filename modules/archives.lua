@@ -9,7 +9,7 @@ function Archives:add(archive)
   self.repo[archive.no] =  archive
 end
 
-function Archives:draw( no, win_num )
+function Archives:draw( no, win_num, seed )
   local archive = self.repo[no]
   assert(archive ~= nil, "round not exsits")
   assert(archive.no == no, "No is not equal。")
@@ -52,6 +52,7 @@ function Archives:draw( no, win_num )
   self.repo[no].expired = expired
   self.repo[no].drawn = true
   self.repo[no].status = expired and -1 or 1
+  self.repo[no].seed = seed
 
   return winners, rewards
 end

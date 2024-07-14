@@ -213,6 +213,8 @@ Handlers.add(
     xpcall(function (msg)
       assert(type(msg.Quantity) == 'string', 'Quantity is required!')
       CURRENT.buff = (CURRENT.buff or 0) + tonumber(msg.Quantity)
+      STATE:increasePoolBalance(msg.Quantity)
+      STATE:increaseOperatorBalance(msg.Quantity)
     end,function(err)
       print(err)
       messenger:sendError(err,msg.Tags.Sender)
@@ -271,7 +273,7 @@ Handlers.add(
       local participants = round.participants
       local seed = ao.id .. round.no .. block.hash .. tostring(bets_amount) .. tostring(participants)
       local win_num = TOOLS:getDrawNumber(seed,3)
-      local winners, rewards = ARCHIVES:draw(msg.Tags.Round, win_num)
+      local winners, rewards = ARCHIVES:draw(msg.Tags.Round, win_num, seed)
       if rewards > 0 then
         if #winners > 0 then
           USERS:increaseWinnersRewardBalance(winners, msg.Timestamp)
@@ -427,7 +429,7 @@ Handlers.add(
     xpcall(function (msg)
       local user = USERS:queryUserInfo(msg.From)
       assert(user ~= nil,"User not exists")
-      local err_str = string.format("Rewards balance is below the claim threshold of %s %s.",TOOLS:toBalanceValue(100),TOKEN.Ticker)
+      local err_str = string.format("Rewards balance is below the claim threshold of %s %s.",TOOLS:toBalanceValue(10),TOKEN.Ticker)
       assert(user.rewards_balance and user.rewards_balance >= 10,err_str)
       local qty =  math.floor(user.rewards_balance * ((1-STATE.tax_rete) or 0.9))
       local message = {
@@ -477,12 +479,28 @@ Handlers.add(
   end
 )
 
+Handlers.add(
+  "_debit_op_withdraw",
+  function (msg)
+    local triggered = msg.From == TOKEN.Process and msg.Tags.Action == "Debit-Notice" and msg.Tags[const.Actions.x_transfer_type] == const.Actions.OP_withdraw
+    if triggered then return true else return false end
+  end,
+  function (msg)
+    xpcall(function (msg)
+      STATE:decreaseOperatorBalance(msg.Quantity)
+      STATE:decreasePoolBalance(msg.Quantity)
+      STATE:increaseWithdraw(msg.Quantity)
+    end,function (err)
+      print(err)
+      messenger:sendError(err,OPERATOR)
+    end,msg)
+  end
+)
+
 -- [[ 运营方提现接口 ]]
 Handlers.add(
   "op.withdraw",
-  function(msg) 
-    if msg.From == OPERATOR and msg.Action == const.Actions.OP_withdraw then return true else return false end
-  end,
+  TOOLS:operatingMatch(msg,"Action",const.Actions.OP_withdraw),
   function (msg)
     xpcall(function (msg)
       local TOKEN_PROCESS = msg.Tags.Token or TOKEN.Process
@@ -514,34 +532,12 @@ Handlers.add(
     end,msg)
   end
 )
-Handlers.add(
-  "op._debit_op_withdraw",
-  function (msg)
-    local triggered = msg.From == TOKEN.Process and msg.Tags.Action == "Debit-Notice" and msg.Tags[const.Actions.x_transfer_type] == const.Actions.OP_withdraw
-    if triggered then return true else return false end
-  end,
-  function (msg)
-    xpcall(function (msg)
-      STATE:decreaseOperatorBalance(msg.Quantity)
-      STATE:decreasePoolBalance(msg.Quantity)
-      STATE:increaseWithdraw(msg.Quantity)
-    end,function (err)
-      print(err)
-      messenger:sendError(err,OPERATOR)
-    end,msg)
-  end
-)
+
 
 
 Handlers.add(
   "op.archive_round",
-  function (msg)
-    if msg.Tags.Action == const.Actions.archive_round then
-      if msg.From == OPERATOR or msg.From == ao.id then return true else return false end
-    else
-      return false
-    end  
-  end,
+  TOOLS:operatingMatch(msg,"Action",const.Actions.archive_round),
   function (msg)
     xpcall(function (msg)
       print("archive start")
@@ -566,13 +562,7 @@ Handlers.add(
 
 Handlers.add(
   "op.changer_archiver",
-  function (msg)
-    if msg.Tags.Action == const.Actions.change_archiver then
-      if msg.From == OPERATOR or msg.From == ao.id then return true else return false end
-    else
-      return false
-    end  
-  end,
+  TOOLS:operatingMatch(msg,"Action",const.Actions.change_archiver),
   function (msg)
     xpcall(function (msg)
       print("change archiver")
@@ -603,9 +593,7 @@ Handlers.add(
 
 Handlers.add(
   "OP.pause",
-  function(msg)
-    if msg.From == OPERATOR and msg.Tags.Action == const.Actions.pause_round then return true else return false end
-  end,
+  TOOLS:operatingMatch(msg,"Action",const.Actions.pause_round),
   function(msg)
     xpcall(
       function(msg)
@@ -623,9 +611,7 @@ Handlers.add(
 
 Handlers.add(
   "op.restart",
-  function(msg)
-    if msg.From == OPERATOR and msg.Tags.Action == const.Actions.round_restart then return true else return false end
-  end,
+  TOOLS:operatingMatch(msg,"Action",const.Actions.round_restart),
   function(msg)
     xpcall(
       function(msg)
@@ -643,9 +629,7 @@ Handlers.add(
 
 Handlers.add(
   "op.start",
-  function(msg)
-    if msg.From == OPERATOR and msg.Tags.Action == const.Actions.round_start then return true else return false end
-  end,
+  TOOLS:operatingMatch(msg,"Action",const.Actions.round_start),
   function(msg)
     xpcall(
       function(msg)
@@ -679,12 +663,11 @@ Handlers.add(
       end
     end
     -- 触发开奖
-    if CURRENT.no > 1 then
-      local prev_no = tostring(tonumber(CURRENT.no)-1)
+    if bint(CURRENT.no) > 1 then
+      local prev_no = tostring(bint(CURRENT.no)-1)
       assert(ARCHIVES.repo[prev_no]~=nil,"round not exist")
       if not ARCHIVES.repo[prev_no].drawn then
         if msg['Block-Height'] >= ARCHIVES.repo[prev_no].end_height + 5 then
-          print("触发开奖")
           ao.send({
             Target=ao.id,
             Action=const.Actions.draw,

@@ -52,6 +52,7 @@ function Current:new(msg)
   self.participants = 0
   self.bets_count = 0
   self.bets_amount = 0
+  self.buff = expired and self.buff or 0
   self.start_time = msg.Timestamp
   self.start_height = msg['Block-Height']
   self.logs = {}
