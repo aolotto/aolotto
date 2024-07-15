@@ -41,7 +41,13 @@ Const.Actions = {
   claim_notice = "Claim-Notice",
   draw="Draw",
   add_buff = "Add-Buff",
-  sponsor = "Sponsor"
+  sponsor = "Sponsor",
+  info = "Info",
+  reply_info="Reply-Info",
+  winners = "Winners",
+  reply_winners = "Reply-Winners",
+  mint_rewards = "Mint-Rewards",
+  minted = "Minted"
 }
 
 Const.RoundStatus = {

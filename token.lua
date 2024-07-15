@@ -57,12 +57,13 @@ Variant = "0.0.3"
 
 -- token should be idempotent and not change previous state updates
 Denomination = Denomination or 3
-Balances = Balances or { [ao.id] = utils.toBalanceValue(210000000 * 10 ^ Denomination) }
-TotalSupply = TotalSupply or utils.toBalanceValue(210000000 * 10 ^ Denomination)
+Balances = Balances or { [ao.id] = utils.toBalanceValue(210000000 * 0.3 * 10 ^ Denomination) }
+TotalSupply = TotalSupply or utils.toBalanceValue(210000000 * 0.3 * 10 ^ Denomination)
 MaxSupply = MaxSupply or utils.toBalanceValue(210000000 * 10 ^ Denomination)
 Name = Name or 'altoken'
 Ticker = Ticker or 'ALT'
 Logo = Logo or '3u9Hr7xL02QjVikyY7i3o7ZiRMdoJqr3eQDzT6SOz1s'
+
 
 --[[
      Add handlers for each incoming Action defined by the ao Standard Token Specification
@@ -256,3 +257,4 @@ Handlers.add('burn', Handlers.utils.hasMatchingTag('Action', 'Burn'), function(m
     Data = Colors.gray .. "Successfully burned " .. Colors.blue .. msg.Quantity .. Colors.reset
   })
 end)
+

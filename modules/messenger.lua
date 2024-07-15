@@ -139,7 +139,7 @@ function Messenger:sendRoundInfo (round,token,msg)
       ["End-Time"] = tostring(round.end_time),
       ["Bets"] = tostring(round.bets_amount),
       ["Base-Rewards"] = tostring(round.base_rewards),
-      ["Winners"] = tostring(#round.winners),
+      ["Winners"] = round.winners and tostring(#round.winners) or nil,
       ["Buff"] = tostring(round.buff),
       ["Status"] = tostring(round.status),
       ["Lucky-Numbers"] = round.win_num and tostring(round.win_num) or nil,

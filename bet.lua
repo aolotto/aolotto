@@ -196,33 +196,6 @@ Handlers.add(
   end
 )
 
---[[ 奖金赞助 ]]
-Handlers.add(
-  '_credit_sponsor',
-  function (msg)
-    if msg.From == TOKEN.Process 
-      and msg.Tags.Action == "Credit-Notice" 
-      and msg.Tags[const.Actions.x_transfer_type] == const.Actions.sponsor
-    then
-      return true
-    else
-      return false
-    end
-  end,
-  function (msg)
-    xpcall(function (msg)
-      assert(type(msg.Quantity) == 'string', 'Quantity is required!')
-      CURRENT.buff = (CURRENT.buff or 0) + tonumber(msg.Quantity)
-      STATE:increasePoolBalance(msg.Quantity)
-      STATE:increaseOperatorBalance(msg.Quantity)
-    end,function(err)
-      print(err)
-      messenger:sendError(err,msg.Tags.Sender)
-    end, msg)
-  end
-)
-
-
 
 --[[ 结束轮次 ]]
 
@@ -327,9 +300,6 @@ Handlers.add(
         target_round = ARCHIVES.repo[msg.Round]
       end
       assert(target_round~=nil,"The round is not exists")
-
-      
-
       if not target_round.archived then
         messenger:sendRoundInfo(target_round, TOKEN, msg)
       else
@@ -411,6 +381,46 @@ Handlers.add(
         Target = msg.From,
         Action = const.Actions.reply_user_info,
         Data = data_str
+      }
+      ao.send(msssage)
+    end,function (err)
+      messenger:sendError(err,msg.From)
+    end,msg)
+  end
+)
+
+
+
+Handlers.add(
+  "getInfo",
+  Handlers.utils.hasMatchingTag("Action", const.Actions.info),
+  function (msg)
+    local message = {
+      Target = msg.From,
+      Action = const.Actions.reply_info,
+      Tags = {
+        ["Name"] = NAME 
+      },
+      Data = [==[
+      aolotto
+      ]==]
+    }
+    ao.send(message)
+  end
+)
+
+Handlers.add(
+  "getWinners",
+  Handlers.utils.hasMatchingTag("Action", const.Actions.winners),
+  function (msg)
+    xpcall(function (msg)
+      assert(msg.Round ~= nil,"Missed round tag.")
+      local round = ARCHIVES.repo[msg.Round]
+      assert(round ~= nil, "The round is not exists")
+      local msssage = {
+        Target = msg.From,
+        Action = const.Actions.reply_winners,
+        Data = "comimg soon."
       }
       ao.send(msssage)
     end,function (err)
