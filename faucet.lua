@@ -1,11 +1,15 @@
-local _config = require("_config")
 local const = require("modules.const")
 local utils = require(".utils")
 local json = require("json")
-if not TOKEN then TOKEN = _config.TOKEN end
+local token_config = {
+  Ticker = Inbox[1].Ticker or "ALT",
+  Process = Inbox[1].Token or "sdqQuIU6WNT1zVNculn814nVhol2XXhDxqgCrUpCtlA",
+  Denomination =  tonumber(Inbox[1].Denomination) or 3,
+  Name = Inbox[1].Tokenname or "altoken"
+}
+if not TOKEN then TOKEN = token_config end
 if not Members then Members = {} end
-if not Initial_Supply then Initial_Supply = 210000000000 * 0.4 end
-if not Total_Supply then Total_Supply = 210000000000 * 0.7 end
+if not Initial_Supply then Initial_Supply = 210000000000 * 0.1 end
 if not Supplied then Supplied = 0 end
 if not BlackList then BlackList = {} end
 if not Logs then Logs = {} end
@@ -31,7 +35,6 @@ Handlers.add(
       assert(msg.Account ~= nil, "missed address id.")
       assert(type(msg.Account)== "string", "invaild wallet address.")
       assert(#msg.Account == 43, "invaild wallet address length.")
-      assert(msg.Timestamp <= State.deadline, "faucet expired.")
       assert(State.available == true, "faucet forbiden.")
       assert(utils.includes(msg.Account,BlackList) == false, "this address has been blacklisted.")
       local member = Members[msg.User]

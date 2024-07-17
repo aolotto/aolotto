@@ -602,7 +602,7 @@ Handlers.add(
 
 
 Handlers.add(
-  "OP.pause",
+  "op.pause",
   TOOLS:operatingMatch(msg,"Action",const.Actions.pause_round),
   function(msg)
     xpcall(

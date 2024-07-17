@@ -85,7 +85,8 @@ function Messenger:sendRoundInfo (round,token,msg)
   if request_type == "json" then
     str = json.encode(round)
   else
-    
+  
+  local name_str = (NAME or "aolotto").."*"..token.Ticker
   local state_str = const.RoundStatus[round.status]
   local start_date_str = tools:timestampToDate(round.start_time,"%Y/%m/%d %H:%M")
   local end_date_str = tools:timestampToDate(round.end_time or round.start_time+round.duration,"%Y/%m/%d %H:%M")
@@ -104,7 +105,7 @@ function Messenger:sendRoundInfo (round,token,msg)
   str=  string.format([[
 
   -----------------------------------------      
-  aolotto Round %s - %s
+  %s Round %s - %s
   ----------------------------------------- 
   * Pool Balance:      %s %s
   * Estimated Prize:   %s %s
@@ -116,6 +117,7 @@ function Messenger:sendRoundInfo (round,token,msg)
   %s
 
     ]],
+    name_str,
     round.no,
     state_str,
     pool_balance,

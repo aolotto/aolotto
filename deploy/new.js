@@ -63,7 +63,7 @@ async function main() {
 
       const packageJSON = fs.readFileSync('package.json', 'utf-8')
       const packageData = JSON.parse(packageJSON)
-      packageData.scripts["aolotto"]= `aos ${process} --wallet wallet.json`
+      packageData.scripts["aolotto"]= `aos ${aoprocess} --wallet wallet.json`
        fs.writeFile('package.json', JSON.stringify(packageData,null,"\t"), (err) => {
         if (err) {
             throw err;
