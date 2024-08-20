@@ -175,10 +175,10 @@ function Messenger:sendClaimNotice(msg,token)
     [const.Actions.x_amount] = msg.Tags[const.Actions.x_amount],
     [const.Actions.x_tax] = msg.Tags[const.Actions.x_tax],
     Data = string.format(
-      "Successfully claimed rewards of %s %s. After deducting the %s % withdrawal tax, the actual amount received is %s %s",
+      "Successfully claimed rewards of %s %s. After deducting the %s withdrawal tax, the actual amount received is %s %s",
       tools:toBalanceValue(tonumber(msg.Tags[const.Actions.x_amount]),token.Denomination),
       token.Ticker,
-      tostring(tonumber(msg.Tags[const.Actions.x_tax])*100),
+      tostring(tonumber(msg.Tags[const.Actions.x_tax])*100).."%",
       tools:toBalanceValue(tonumber(msg.Tags.Quantity),token.Denomination),
       token.Ticker
     )

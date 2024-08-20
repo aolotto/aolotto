@@ -28,7 +28,7 @@ local utils = {
    ]]
 --
 
-AOLOTTO = AOLOTTO or "a1Lr8aT5MVr9I9-MdHGssHLKadi_3jaDaKriw5a7qtQ"
+AOLOTTO = AOLOTTO or "2vheopvdwEfont-jQC_G9--6bV2hGn-IzlHxsq4CLWY"
 
 
 --[[
@@ -54,12 +54,18 @@ Handlers.add('mintRewards',Handlers.utils.hasMatchingTag('Action',const.Actions.
     
     local msssage = {
       Target = msg.From,
-      Action = const.Actions.minted,
+      Action = "Minted",
       Round = msg.Round,
-      Quantity = Quantity
+      Quantity = tostring(Quantity),
+      Data = "Successfully minted "
     }
-    table.insert(msssage,MintLogs)
-    msssage.Data = Colors.gray .. "Successfully minted " .. Colors.blue .. Quantity .. Colors.reset
+    -- table.insert(MintLogs,{
+    --   id = msg.Id,
+    --   minter = msg.From,
+    --   quantity = Quantity,
+    --   timestamp = msg.Timestamp,
+
+    -- })
     ao.send(msssage)
   else
     ao.send({

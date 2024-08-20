@@ -1,5 +1,6 @@
 local const = require("modules.const")
 local messenger = require("modules.messenger")
+local utils = require(".utils")
 
 --[[ 结束轮次 ]]
 
@@ -18,7 +19,7 @@ Handlers.add(
       -- 重置轮次信息
       CURRENT:new(msg)
       -- 触发token进程铸造新币
-      ao.send({
+      ao.send({ 
         Target = TOKEN.Process,
         Action = const.Actions.mint_rewards,
         Round = archive.no
@@ -44,6 +45,25 @@ Handlers.add(
   function(msg)
     xpcall(function (msg)
       if msg.From == TOKEN.Process then
+        assert(type(msg.Quantity)=='string',"Quantity required!")
+        assert(tonumber(msg.Quantity) > 0, "Quantity must larger than 0.")
+        USERS:increaseAllRewardBalance(tonumber(msg.Quantity), msg.Timestamp)
+        STATE:increasePoolBalance(msg.Quantity)
+        STATE:increaseOperatorBalance(msg.Quantity)
+      end
+    end,function (err)
+      print(err)
+    end,msg)
+  end
+)
+
+
+Handlers.add(
+  "op.minted",
+  Handlers.utils.hasMatchingTag("Action","op_minted"),
+  function(msg)
+    xpcall(function (msg)
+      if msg.From == ao.id then
         assert(type(msg.Quantity)=='string',"Quantity required!")
         assert(tonumber(msg.Quantity) > 0, "Quantity must larger than 0.")
         USERS:increaseAllRewardBalance(tonumber(msg.Quantity), msg.Timestamp)

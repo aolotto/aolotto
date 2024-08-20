@@ -20,6 +20,12 @@ local token_config = {
 if not NAME then NAME = Name or "aolotto" end
 if not OPERATOR then OPERATOR = Owner end
 if not TOKEN then TOKEN = token_config end
+if not BlackList then BlackList = {
+  ao.id,
+  TOKEN.Process,
+  "5PwOcPRPmAJH_Fd-tXlGzISbeUxInGXl8pvu-tIUvwI",
+  "qOyriGqikTM1RxJ_n4HQ-27E5fnnW97cln8phLvjebc"
+} end
 
 --[[
   *******************
@@ -128,6 +134,7 @@ Handlers.add(
       
       assert(type(msg.Quantity) == 'string', 'Quantity is required!')
       assert(msg.Sender ~= OPERATOR, "Operator is not available on betting")
+      assert(utils.includes(msg.Sender,BlackList)==false,"Address in Blacklist reject.")
 
       -- 如过当前不在运行状态，退还用户款项
       if STATE.run ~= 1 then REFUNDS:rejectToken(msg) return end
@@ -207,8 +214,10 @@ Handlers.add(
   end,
   function (msg)
     xpcall(function (msg)
-      assert(CURRENT.bets_amount >= CURRENT.base_rewards, "amount not reached")
-      assert(msg.Timestamp >= (CURRENT.start_time + CURRENT.duration), "amount not reached")
+      if msg.Timestamp <= (CURRENT.start_time + CURRENT.duration * 7) then
+        assert(CURRENT.bets_amount >= CURRENT.base_rewards, "amount not reached")
+        assert(msg.Timestamp >= (CURRENT.start_time + CURRENT.duration), "time not reached")
+      end
       local archive = CURRENT:archive(msg)
       ARCHIVES:add(archive)
       -- 重置轮次信息
@@ -235,6 +244,7 @@ Handlers.add(
   end,
   function(msg)
     xpcall(function (msg)
+      print("触发开奖")
       assert(msg.Tags.Round~=nil,"missd Round tag")
       assert(ARCHIVES.repo[msg.Tags.Round]~=nil, 'Target Round are not archived!')
       local round = ARCHIVES.repo[msg.Tags.Round]
@@ -420,7 +430,7 @@ Handlers.add(
       local msssage = {
         Target = msg.From,
         Action = const.Actions.reply_winners,
-        Data = "comimg soon."
+        Data = json.encode(round.winners)
       }
       ao.send(msssage)
     end,function (err)
