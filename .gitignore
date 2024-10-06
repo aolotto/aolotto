@@ -7,3 +7,4 @@ processes.txt
 *.txt
 node_modules
 .env*
+test/*
