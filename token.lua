@@ -56,11 +56,11 @@ Variant = "0.0.3"
 
 -- token should be idempotent and not change previous state updates
 Denomination = Denomination or 12
-Balances = Balances or { [ao.id] = utils.toBalanceValue(100000 * 10 ^ Denomination) }
+Balances = Balances or { [ao.id] = utils.toBalanceValue(10000 * 10 ^ Denomination) }
 TotalSupply = TotalSupply or utils.toBalanceValue(10000 * 10 ^ Denomination)
-Name = Name or 'Xin Coin'
-Ticker = Ticker or 'XIN'
-Logo = Logo or 'VzvP24VxdNt1kf3E-EXxxrihaNBnXpEI-5ymwWddJRk'
+Name = Name or 'Aolotto Test token'
+Ticker = Ticker or 'TALT'
+Logo = Logo or 'Pgcwy3W4emNSod-BcFWWNZT1ASAKcEuTDJxN81Aj7Hs'
 
 --[[
      Add handlers for each incoming Action defined by the ao Standard Token Specification

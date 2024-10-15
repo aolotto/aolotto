@@ -1,13 +1,10 @@
-Pools = Pools or {total=0,ref=0}
-Players = Players or {total=0}
-State = State or {}
-TAX = 0.05
-Payments = Payments or {}
 
-local crypto = require(".crypto")
-local utils = require(".utils")
+
+
 local ao = require(".ao")
+local crypto = require(".crypto")
 
+local utils = require(".utils")
 -- Extend utils methods
 utils.parseNumberStringToBets = function(str,len)
   local bets = {}
@@ -81,8 +78,6 @@ utils.decreaseById = function(self, id, tbl)
   end
 end
 
-
-
 utils.getById = function(self, id)
   return self[id]
 end
@@ -94,8 +89,45 @@ utils.updateById = function(self, id, tbl)
   end
 end
 
--- Create a metatable for Global Tables with custom methods
-local players = setmetatable(Players, {
+
+Pools = Pools or {}
+setmetatable(Pools, {
+  __index = {
+    -- Get a pool by ID
+    getById = utils.getById,
+    -- Add a new pool with given ID and table
+    add = function(self, id, tbl)
+      self[id] = tbl
+    end,
+    -- Update an existing pool's properties
+    updateById = utils.updateById,
+    -- Remove a pool by ID
+    remove = function(self, id)
+      self[id] = nil
+    end,
+    -- Increase pool's values
+    increaseById = utils.increaseById,
+    -- Decrease pool's values
+    decreaseById = utils.decreaseById,
+    increaseMine = function(self,id,v)
+      assert(id ~= nil, "missed id")
+      assert(v ~= nil and type(v) == "number","error type of v ")
+      self[id].mine = self[id].mine or {0,0,0}
+      self[id].mine[1] = (self[id].mine[1] or 0) + v
+      self[id].mine[2] = (self[id].mine[2] or 0) + v
+    end,
+    decreaseMine = function(self,id,v)
+      assert(id ~= nil, "missed id")
+      assert(v ~= nil and type(v) == "number","error type of v ")
+      self[id].mine = self[id].mine or {0,0,0}
+      self[id].mine[1] = (self[id].mine[1] or 0) - v
+      self[id].mine[3] = (self[id].mine[3] or 0) + v
+    end
+  }
+})
+
+Players = Players or {}
+setmetatable(Players, {
   __index = {
     -- Get a player by ID
     getById = utils.getById,
@@ -160,37 +192,44 @@ local players = setmetatable(Players, {
       for i,v in ipairs(values) do
         self[id].bets[token][i] = (b[i] or 0) + (v or 0)
       end
+    end,
+
+    increaseMine = function(self,id,value)
+      self[id].mine = self[id].mine or {0,0,0}
+      self[id].mine[1] = self[id].mine[1] + value
+      self[id].mine[2] = self[id].mine[2] + value
+    end,
+
+    decreaseMine = function(self,id,value)
+      self[id].mine = self[id].mine or {0,0,0}
+      self[id].mine[1] = self[id].mine[1] - value
+      self[id].mine[3] = self[id].mine[3] + value
     end
-
   }
 })
+State = State or {}
+Payments = Payments or {}
+TAX = TAX or 0.05
+ALTOKEN = ALTOKEN or "Sj2vhYBdl-Q1jDw3HPNHUz_1zp4CPMywhSW53Z4AHpU"
+Balances = Balances or {}
+Notice = Notice or {}
 
 
 
-local pools = setmetatable(Pools, {
-  __index = {
-    -- Get a pool by ID
-    getById = utils.getById,
-    -- Add a new pool with given ID and table
-    add = function(self, id, tbl)
-      self[id] = tbl
-    end,
-    -- Update an existing pool's properties
-    updateById = utils.updateById,
-    -- Remove a pool by ID
-    remove = function(self, id)
-      self[id] = nil
-    end,
-    -- Increase pool's values
-    increaseById = utils.increaseById,
-    -- Decrease pool's values
-    decreaseById = utils.decreaseById,
-  }
-})
 
-
+-- handlers
 
 Handlers.add("pools", "Pools", function(msg)
+  local pools = {}
+  for k,v in pairs(Pools) do
+    if v.state == 1 then
+      pools[k] = v
+    end
+  end
+  msg.reply({Data = pools})
+end)
+
+Handlers.add("all-pools", "All-Pools", function(msg)
   msg.reply({Data = Pools})
 end)
 
@@ -206,13 +245,12 @@ end)
 Handlers.add("bet", {
   Action = "Credit-Notice",
   Quantity = "%d",
-  From = function(_from)
-    return Pools[_from] ~= nil and Pools[_from].pool_id ~= nil
-  end,
+  From ="_",
   ['X-Numbers'] = "_",
   Data = "_"
 }, function(msg)
-  local pool = pools:getById(msg.From)
+  
+  local pool = Pools:getById(msg.From)
   assert(pool ~= nil and pool.pool_id ~= nil, "Pool not found or not active")
   local max_bets_in_quantity = math.floor(tonumber(msg.Quantity)/pool.price) 
   assert(max_bets_in_quantity > 0, "Invalid quantity")
@@ -231,9 +269,9 @@ Handlers.add("bet", {
   print(total_bets)
 
   -- Create player if not exists
-  if not players:getById(msg.Sender) then
+  if not Players:getById(msg.Sender) then
     print("Add new player")
-    players:add(msg.Sender, {
+    Players:add(msg.Sender, {
       id = msg.Sender,
       ts_create = msg.Timestamp,
     })
@@ -246,8 +284,8 @@ Handlers.add("bet", {
     Action = "Save-Bets",
     Ticket = msg.Id,
     Player = msg.Sender,
-    Ticker = pool.token_info.ticker,
-    Denomination = pool.token_info.denomination,
+    Ticker = pool.ticker,
+    Denomination = pool.denomination,
     Price = tostring(pool.price),
     ['Ticket-Nouce'] = utils.getRandomNumber(3,ao.id),
     Data = {
@@ -259,21 +297,18 @@ Handlers.add("bet", {
   })
   .onReply(function(m)
     -- Increase player's bets and tickets
-    players:increaseById(msg.Sender, {tickets = 1})
+    Players:increaseById(msg.Sender, {tickets = 1})
     local new_bet = {}
     new_bet[1] = total_bets
     new_bet[2] = total_bets * pool.price
     new_bet[3] = 1
-    print(new_bet)
-    players:increaseBets(msg.Sender,msg.From,new_bet)
+    Players:increaseBets(msg.Sender,msg.From,new_bet)
     -- Increase pool's stats
     Pools[msg.From].stats = m.Data
     -- Update player's latest bet timestamp
-    players:updateById(msg.Sender,{
+    Players:updateById(msg.Sender,{
       ts_latest_bet = msg.Timestamp
     })
-
-    print("saved!!!")
 
     Send({
       Target = msg.Sender,
@@ -281,8 +316,8 @@ Handlers.add("bet", {
       ['Ticket-Id'] = msg.Id,
       ['Pool-Id'] = m.From or pool.pool_id,
       ['Token-Id'] = msg.From or pool.token_id,
-      ['Ticker'] = pool.token_info.ticker,
-      ['Denomination'] = tostring(pool.token_info.denomination),
+      ['Ticker'] = pool.ticker,
+      ['Denomination'] = tostring(pool.denomination),
       ['Price'] = tostring(pool.price),
       ['Count'] = tostring(total_bets),
       ['Amount'] = tostring(total_bets * pool.price),
@@ -296,106 +331,8 @@ Handlers.add("bet", {
 end)
 
 
-Handlers.createNewPool = function(params)
-  assert(params.pool_id ~= nil and params.token_id ~= nil and params.name ~= nil, "Invalid params")
-  assert(pools[params.token_id] == nil, "Pool already exists")
 
-  for k,v in pairs(Pools) do
-    assert(v.pool_id ~= params.pool_id, "Pool ID already exists")
-  end
-
-  table.insert(ao.authorities,params.pool_id)
-
-  State.total_pools = (State.total_pools or 0) + 1
-  State.pools_ref = (State.pools_ref or 0) + 1
-  Pools[params.token_id] = {
-    ref = State.pools_ref,
-    name = params.name,
-    pool_id = params.pool_id,
-    token_id = params.token_id,
-    price = params.price or 100,
-    digits = params.digits or 3,
-    token_info = params.token_info,
-    ts_create = os.time(),
-    state = 0
-  }
-  if params.token_info == nil then
-    Handlers.once("once_get_token_info_"..params.token_id,{
-      From = params.token_id,
-      Name = "_",
-      Ticker = "_",
-      Denomination = "_",
-      Logo = "_",
-    },function(m)
-      Pools[params.token_id].token_info = {
-        id = m.From,
-        name = m.Name,
-        ticker = m.Ticker,
-        denomination = m.Denomination,
-        logo = m.Logo,
-      }
-      print('Pool created -> '..params.token_id)
-    end)
-
-
-    Send({
-      Target = params.token_id,
-      Action = "Info",
-    })
-  end
-end
-
-Handlers.removePool = function(id)
-  if Pools[id] ~= nil then
-    Pools[id] = nil
-    State.total_pools = math.max(0,(State.total_pools or 0)-1)
-    print('Pool ['..id.."] has been removed!")
-  end
-end
-
-
-Handlers.add("start_pool",{
-  From = function(_from)
-    return Pools[_from] ~= nil
-  end,
-  Action = "Credit-Notice",
-  Quantity = function(qty,_m)
-    return tonumber(qty) >= Pools[_m.From].price * math.floor(10 ^ Pools[_m.From].digits)
-  end,
-  ['X-Transfer-Type'] = "Start-Pool"
-},function(msg)
-  Handlers.once('started_pool'..msg.From,{
-    From = Pools[msg.From].pool_id,
-    Action = "Pool-Started",
-  },function(m)
-    Pools[msg.From].stats = m.Data
-    Pools[msg.From].state = 1
-    print("Pool ["..msg.From.."] 's process has been started.")
-  end)
-
-  Send({
-    Target = Pools[msg.From].pool_id,
-    Action = "Start-Pool",
-    ['Funds'] = msg.Quantity,
-    Data = Pools[msg.From]
-  })
-
-end)
-
-
-
-Handlers.add("draw_notice",{
-  Action="Draw-Notice",
-  From = function(_from)
-    local pool = nil
-    for k,v in pairs(Pools) do
-      if v.pool_id == _from then
-        pool = v
-      end
-    end
-    return pool ~= nil
-  end
-},function(msg)
+Handlers.add("draw-notice","Draw-Notice",function(msg)
   local pool = nil
   for k,v in pairs(Pools) do
     if v.pool_id == msg.From then
@@ -403,23 +340,44 @@ Handlers.add("draw_notice",{
     end
   end
   assert(pool~=nil,"pool is not exist")
-  local draw = msg.Data
+  print("save draw")
+  table.insert(Notice,msg.Data)
+  
+  local draw = msg.Data.draw
+  local players = msg.Data.players
   
   for player_id,reward in pairs(draw.rewards) do
-    players:increaseRewards(player_id,pool.token_id,reward)
+    Players:increaseRewards(player_id,pool.token_id,reward)
     Send({
       Target = player_id,
       Action = "Bonus-Added",
       Quantity = tostring(reward),
       Token = pool.token_id,
-      Ticker = pool.token_info.ticker,
-      Denomination = tostring(pool.token_info.denomination),
+      Ticker = pool.ticker,
+      Denomination = tostring(pool.denomination),
       Sender = msg.From,
-      Data = "You get a bonus of "..tostring(reward).." $"..pool.token_info.ticker
+      Data = "You get a bonus of "..tostring(reward).." $"..pool.ticker
     })
-    print("rewarded!!")
   end
 
+  if pool.mine[1] > 0 then
+    local per_mine_amount = pool.mine[1] / msg.Data.state.bet_count
+    local players = msg.Data.players
+    for id, v in pairs(players) do
+      Players:increaseMine(id,v[1]*per_mine_amount)
+    end
+    Pools:decreaseMine(pool.token_id, pool.mine[1])
+    table.insert(Mines,{
+      id = msg.Id,
+      quantity = pool.mine[1],
+      pool = pool.token_id,
+      round = tostring(msg.Data.state.current_round),
+      type = "decrease",
+      ts_create = msg.Timestamp
+    })
+
+  end
+  Handlers.mine(pool.token_id)
 end)
 
 
@@ -427,26 +385,28 @@ end)
 Handlers.add("claim",{
   Action = "Claim",
   Token = "_",
-  From = function(_from) return players:getById(_from) ~= nil end
+  From = function(_from) return Players:getById(_from) ~= nil end
 },function(msg)
-  local player = players:getById(msg.From)
+  local player = Players:getById(msg.From)
   assert(player.rewards ~= nil and player.rewards[msg.Token] ~= nil and player.rewards[msg.Token][1] > 0, "no rewards to calim")
   local balance = player.rewards[msg.Token][1]
   local quantity = math.floor(balance * (1-TAX))
   assert(quantity > 0, "Amount too small, unable to claim")
-  players:decreaseRewards(msg.From,msg.Token,balance)
-  local token_info = Pools[msg.Token].token_info
+  Players:decreaseRewards(msg.From,msg.Token,balance)
+  local pool = Pools[msg.Token]
   table.insert(Payments,{
     id = msg.Id,
     quantity = quantity,
     token = msg.Token,
     recipient = msg.From,
-    token_info = token_info,
+    ticker = pool.ticker,
+    logo = pool.logo,
+    denomination = pool.denomination,
     ts_created = msg.Timestamp
   })
   
 
-  Handlers.once("once_claimed_"..msg.Id,{
+  Handlers.once("once-claimed-"..msg.Id,{
     Action = "Debit-Notice",
     From = msg.Token,
     Quantity = tostring(quantity),
@@ -466,9 +426,9 @@ Handlers.add("claim",{
           Quantity = m.Quantity or tostring(quantity),
           Tax = m['X-Claim-Tax'] or tostring(TAX),
           Token = m.From or msg.Token,
-          Ticker = token_info.ticker,
-          Denomination = token_info.denomination,
-          Data = "You've claim a bouns of "..tostring(balance).." $"..pool.token_info.ticker
+          Ticker = pool.ticker,
+          Denomination = pool.denomination,
+          Data = "You've claim a bouns of "..tostring(balance).." $"..pool.ticker
         })
         
       end 
@@ -487,3 +447,106 @@ Handlers.add("claim",{
   })
 
 end)
+
+
+
+
+
+Handlers.add('create-pool',{
+  Action = "Create-Pool",
+  From = Owner,
+  Token = "_",
+  Pool = "_",
+  Name = "_"
+},function(msg)
+  assert(Pools[msg.Token] == nil, "Pool already exists")
+  State.total_pools = (State.total_pools or 0) + 1
+  State.pools_ref = (State.pools_ref or 0) + 1
+  Pools[msg.Token] = {
+    ref = State.pools_ref,
+    name = msg.Name,
+    pool_id = msg.Pool,
+    token_id = msg.Token,
+    ts_created = msg.Timestamp,
+    digits = tonumber(msg.Digits) or 3,
+    ticker = msg.Ticker,
+    denomination = msg.Denomination,
+    logo = msg.Logo
+  }
+  msg.reply({
+    Action = "Pool-Created",
+    Data = Pools[msg.Token]
+  })
+end)
+
+Handlers.add("start-pool",{
+  Action = "Credit-Notice",
+  Quantity = "%d+",
+  From = "_",
+  ['X-Price'] = "%d+",
+  ['X-Transfer-Type'] = "Start-Pool"
+},function(msg)
+  assert(Pools[msg.From] ~= nil, "no pool for the token")
+  local pool = Pools[msg.From]
+  assert(pool.pool_id ~= nil, "no process for this pool.")
+  assert(pool.state ~= 1, "the pool was starting before.")
+  assert(tonumber(msg.Quantity) >= tonumber(msg['X-Price'])* (10^(pool.digits or 3)))
+  Handlers.once('started_pool'..msg.From,{
+    From = Pools[msg.From].pool_id,
+    Action = "Pool-Started",
+  },function(m)
+    Pools[msg.From].stats = m.Data
+    Pools[msg.From].state = 1
+    Pools[msg.From].price = tonumber(msg['X-Price'])
+    print("Pool ["..msg.From.."] 's process has been started.")
+  end)
+
+  Send({
+    Target = Pools[msg.From].pool_id,
+    Action = "Start-Pool",
+    ['Funds'] = msg.Quantity,
+    Price = msg['X-Price'],
+    Data = Pools[msg.From]
+  })
+
+end)
+
+Handlers.mine = function(pid)
+  assert(pid ~= nil, "missed pool id")
+  local pool = Pools:getById(pid)
+  assert(pool ~= nil,"pool not exists")
+  assert(pool.mine == nil or pool.mine[1] == 0, "already mined for current round before")
+  Mines = Mines or {}
+  
+  Handlers.once(
+    "once-mined-"..pid.."-"..pool.stats.current_round.."-"..os.time(),
+    {
+      Action = "Mined",
+      From = ALTOKEN,
+      Pool = pid,
+      Round = tostring(pool.stats.current_round),
+      Quantity = "%d+"
+    },
+    function(m)
+      table.insert(Mines,{
+        id = m.Id,
+        quantity = tonumber(m.Quantity),
+        pool = m.Pool,
+        round = m.Round,
+        type = "increase",
+        ts_create = m.Timestamp
+      })
+      Pools:increaseMine(m.Pool,tonumber(m.Quantity))
+      Pools:increaseById(m.Pool,{total_mined = 1})
+      State.total_mined = (State.total_mined or 0) + 1
+
+    end
+  )
+
+  Send({
+    Target = ALTOKEN,
+    Action = "Mine",
+    Pool = pid,
+    Round = tostring(pool.stats.current_round)
+  })
+end

@@ -8,3 +8,7 @@ processes.txt
 node_modules
 .env*
 test/*
+.backup/*
+.backup
+test
+.env

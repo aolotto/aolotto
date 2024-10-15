@@ -1,702 +1,521 @@
---[[
-  *******************
-  Global constants and module imports
-  *******************
-]]--
-local const = require("modules.const")
-local messenger = require("modules.messenger")
+local ao = require(".ao")
+local drive = require("modules.drive")
 local utils = require(".utils")
 local crypto = require(".crypto")
-local json = require("json")
-local bint = require('.bint')(256)
-local drive = require("modules.drive")
-local token_config = {
-  Ticker = Inbox[1].Ticker or "ALT",
-  Process = Inbox[1].Token or "zQ0DmjTbCEGNoJRcjdwdZTHt0UBorTeWbb_dnc6g41E",
-  Denomination =  tonumber(Inbox[1].Denomination) or 3,
-  Name = Inbox[1].Tokenname or "altoken"
-}
 
-if not NAME then NAME = Name or "aolotto" end
-if not OPERATOR then OPERATOR = Owner end
-if not TOKEN then TOKEN = token_config end
-if not BlackList then BlackList = {
-  ao.id,
-  TOKEN.Process,
-  "5PwOcPRPmAJH_Fd-tXlGzISbeUxInGXl8pvu-tIUvwI",
-  "qOyriGqikTM1RxJ_n4HQ-27E5fnnW97cln8phLvjebc"
-} end
-
---[[
-  *******************
-  Initialize the database to store user information。
-  *******************
-]]--
-if not db then 
-  db = require("modules.database")
-  db:exec[[
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    bets_count INTEGER,
-    bets_amount INTEGER,
-    rewards_balance INTEGER,
-    total_rewards_amount INTEGER,
-    total_rewards_count INTEGER,
-    total_shared_count INTEGER,
-    participation_rounds TEXT,
-    create_at INTEGER,
-    update_at INTEGER
-  );
-]]
+utils.toTokenQuantity = function(v,denomination)
+  local precision = denomination or 3
+  return v / 10^precision
 end
 
---[[
-  全局状态对象
-]] --
-if not STATE then STATE = {
-  run = 0,
-  pool_balance = 0,
-  total_pool_balance = 0,
-  operator_balance = 0,
-  total_pool_balance = 0,
-  tax_rete = 0.1,
-  total_withdraw = {},
-  total_claim_paid = 0
-} end
-setmetatable(STATE,{__index=require("modules.state")})
-
---[[
-  轮次
-]]
-if not CURRENT then CURRENT = {
-  bets={},
-  logs={},
-  statistics={},
-  no="1",
-  duration = tonumber(Inbox[1].Tags.Duration) or 86400000,
-  start_time = Inbox[1].Timestamp,
-  start_height = Inbox[1]['Block-Height'],
-  base_rewards = 0,
-  bets_count=0,
-  status = 0,
-  bets_amount = 0,
-  participants = 0,
-  end_time = nil,
-  buff = 0
-} end
-setmetatable(CURRENT,{__index=require("modules.current")})
-
---[[
-  工具
-]]
-if not TOOLS then TOOLS = {} end
-setmetatable(TOOLS,{__index=require("modules.tools")})
-
---[[
-  用户
-]]
-if not USERS then USERS = { db_name ="users" } end
-setmetatable(USERS,{__index=require("modules.users")})
-
---[[
-  归档暂存
-]]
-if not ARCHIVES then ARCHIVES = {repo={}} end
-setmetatable(ARCHIVES,{__index=require("modules.archives")})
-
---[[
-  退款记录
-]]
-if not REFUNDS then REFUNDS = {logs={}} end
-setmetatable(REFUNDS,{__index=require("modules.refund")})
-
-
---[[ 
-  投注接口 
-]]
-
-Handlers.add(
-  '_credit_bet',
-  function (msg)
-    if msg.From == TOKEN.Process 
-      and msg.Tags.Action == "Credit-Notice" 
-      and msg.Sender ~= TOKEN.Process 
-      and msg.Tags[const.Actions.x_transfer_type] ~= const.Actions.sponsor
-    then
-      return true
-    else
-      return false
-    end
-  end,
-  function (msg)
-
-    xpcall(function (msg)
-      
-      assert(type(msg.Quantity) == 'string', 'Quantity is required!')
-      assert(msg.Sender ~= OPERATOR, "Operator is not available on betting")
-      assert(utils.includes(msg.Sender,BlackList)==false,"Address in Blacklist reject.")
-
-      -- 如过当前不在运行状态，退还用户款项
-      if STATE.run ~= 1 then REFUNDS:rejectToken(msg) return end
-
-      -- 判断是否为当前轮次的新参与者
-      local participated = CURRENT:isParticipated(msg)
-      -- 消息转换为投注
-      local bets = TOOLS:messageToBets(msg)
-      -- 保存投注
-      CURRENT:saveBets(bets,msg)
-      -- 更新用户数据
-      local user = USERS:queryUserInfo(msg.Sender) or {}
-      local userInfo = {
-        id = msg.Sender,
-        bets_count = user.bets_count and user.bets_count + 1 or 1,
-        bets_amount = user.bets_amount and (user.bets_amount+tonumber(msg.Quantity)) or tonumber(msg.Quantity),
-        rewards_balance = user.rewards_balance or 0,
-        total_rewards_count = user.total_rewards_count or 0,
-        total_rewards_amount = user.total_rewards_amount or 0,
-        create_at = user.create_at or msg.Timestamp,
-        update_at = msg.Timestamp,
-        participation_rounds = TOOLS:getParticipationRoundStr(user.participation_rounds,CURRENT.no)
-      }
-      USERS:replaceUserInfo(userInfo)
-
-      -- -- 增加奖池总额
-      STATE:increasePoolBalance(msg.Quantity)
-      STATE:increaseOperatorBalance(msg.Quantity)
-      
-
-      -- 下发消息
-      local data_str = ""
-      if msg.Donee then
-        data_str = string.format("Placed %d bet%s for '%s' on aolotto Round %s , with the numbers: %s",
-          msg.Quantity, tonumber(msg.Quantity)>1 and "s" or "" , msg.Donee , CURRENT.no , json.encode(bets) )
+utils.query = function(self,limit,offset,sort)
+  local temp = {}
+  table.move(self, 1, #self, 1, temp)
+  if(sort) then
+    table.sort(temp,function(a,b) 
+      if sort[2] == "desc" then
+        return a[sort[1]] > b[sort[1]]
       else
-        data_str = string.format("Placed %d bet%s on aolotto Round %s , with the numbers: %s",
-          msg.Quantity , tonumber(msg.Quantity)>1 and "s" or "", CURRENT.no , json.encode(bets) )
+        return a[sort[1]] < b[sort[1]]
       end
-      local message = {
-        Target = msg.Sender,
-        Action = const.Actions.lotto_notice,
-        Data = data_str,
-        Quantity = msg.Quantity,
-        Round = tostring(CURRENT.no),
-        Token = msg.From,
-        ["Pushed-For"] = msg.Tags["Pushed-For"],
-        [const.Actions.x_numbers] = msg.Tags[const.Actions.x_numbers]
+    end)
+  end
+  local result = {}
+  table.move(temp, offset or 1, math.min((limit or #temp) + (offset or 0)-1, #temp),1, result)
+  return result
+end
+
+utils.getDrawNumber = function(seed,len)
+  local numbers = ""
+  for i = 1, len or 3 do
+    local n = crypto.cipher.issac.random(0, 9, tostring(i)..seed..numbers)
+    numbers = numbers .. n
+  end
+  return numbers
+end
+
+utils.deepCopy = function(original)
+  if type(original) ~= "table" then
+      return original
+  end
+  local copy = {} 
+  for k, v in pairs(original) do
+      copy[k] = utils.deepCopy(v) 
+  end
+  return copy
+end
+
+Const = Const or {
+  MIN_BET=1,
+  MAX_BET=1000,
+  PRICE = 100,
+  DRAW_DURATION = 86400000,
+  
+}
+Info = Info or {
+  name = ao.env.Process.Tags.Name or "FEI",
+  token = ao.env.Process.Tags.Token or "zQ0DmjTbCEGNoJRcjdwdZTHt0UBorTeWbb_dnc6g41E",
+  agent = ao.env.Process.Tags.Agent or "OOyuoFCDnKwl1QlJRiRNEoaSf0B_P553B3QpSVW4ffI",
+  description = ao.env.Process.Tags.Name.."pool" or "Aolotto-Fei pool",
+  timer = ao.env.Process.Tags.Timer or "cPRHI5QAEzruiUIFDK5wdBNNLv_4r9zPFnRXN4rUgo4"
+}
+
+-- Get token information
+if not Info.token_info then
+  local token_id = Info.token or ao.env.Process.Tags.Token
+  if token_id then
+    Handlers.once("once_get_tokeninfo_"..token_id,{
+      From = token_id,
+      Name = "_",
+      Ticker = "_",
+      Logo = "_",
+      Denomination = "_"
+    },function(m)
+      Info.token_info = {
+        id = m.From,
+        name = m.Name,
+        ticker = m.Ticker,
+        denomination = m.Denomination,
+        logo = m.Logo,
       }
-      if msg.Donee then
-        message['Donee'] = msg.Donee
-      end
-      ao.send(message)
-
-      -- 触发轮次结束
-      local amount_reached = CURRENT.bets_amount >= CURRENT.base_rewards
-      local time_reached = msg.Timestamp >= (CURRENT.start_time + CURRENT.duration)
-      if amount_reached and time_reached then
-        ao.send({Target=ao.id,Action=const.Actions.finish,Round=tostring(CURRENT.no)})
-      end
-
-    end,function(err)
-      print(err)
-      messenger:sendError(err,msg.Tags.Sender)
-    end, msg)
+    end)
+    Send({Target=token_id,Action="Info"})
   end
-)
+end
 
-
---[[ 结束轮次 ]]
-
-Handlers.add(
-  "_finish",
-  function (msg)
-    local is_operator = msg.From == OPERATOR or msg.From == ao.id
-    if is_operator and msg.Tags.Action == const.Actions.finish then return true else return false end
-  end,
-  function (msg)
-    xpcall(function (msg)
-      if msg.Timestamp <= (CURRENT.start_time + CURRENT.duration * 7) then
-        assert(CURRENT.bets_amount >= CURRENT.base_rewards, "amount not reached")
-        assert(msg.Timestamp >= (CURRENT.start_time + CURRENT.duration), "time not reached")
-      end
-      local archive = CURRENT:archive(msg)
-      ARCHIVES:add(archive)
-      -- 重置轮次信息
-      CURRENT:new(msg)
-      -- 通知所有用户轮次切换
-      local assignments = utils.map(
-        function (val, key) return val.id end,
-        USERS:queryAllusers()
-      )
-      messenger:sendRoundSwitchNotice(CURRENT,assignments,TOKEN)
-    end,function (err)
-      print(err)
-    end,msg)
-  end
-)
-
--- [[ 开奖 ]]
-
-Handlers.add(
-  "_draw",
-  function (msg)
-    local is_operator = msg.From == OPERATOR or msg.From == ao.id
-    if is_operator and msg.Tags.Action == const.Actions.draw then return true else return false end
-  end,
-  function(msg)
-    xpcall(function (msg)
-      print("触发开奖")
-      assert(msg.Tags.Round~=nil,"missd Round tag")
-      assert(ARCHIVES.repo[msg.Tags.Round]~=nil, 'Target Round are not archived!')
-      local round = ARCHIVES.repo[msg.Tags.Round]
-      assert(round.end_height <= msg['Block-Height']-5, 'Draw time has not yet arrived.')
-      local block = drive.getBlock(tostring(round.end_height+5))
-      assert(block ~= nil, "Lucky block does not exist")
-      local bets_amount = round.bets_amount
-      local bets = round.bets
-      local participants = round.participants
-      local seed = ao.id .. round.no .. block.hash .. tostring(bets_amount) .. tostring(participants)
-      local win_num = TOOLS:getDrawNumber(seed,3)
-      local winners, rewards = ARCHIVES:draw(msg.Tags.Round, win_num, seed)
-      if rewards > 0 then
-        if #winners > 0 then
-          USERS:increaseWinnersRewardBalance(winners, msg.Timestamp)
-          for key, winner in pairs(winners) do
-            messenger:sendWinNotice(msg.Tags.Round,winner,TOKEN)
-          end
-        else
-          USERS:increaseAllRewardBalance(rewards, msg.Timestamp)
+State = State or {
+  current_round=0,
+  jackpot=0,
+  balance=0,
+  bet_count=0,
+  bet_amount=0,
+  latest_bet_time=0,
+  latest_draw_time=0,
+  alt_reward=0,
+  selected_numbers=0
+}
+setmetatable(State, {
+  __index = {
+    increase = function(self,table)
+      self = self or {}
+      for k,v in pairs(table) do
+        if type(v) == "number" then
+          self[k] = (self[k] or 0) + v
         end
-      else
-        REFUNDS:refundToParticipantInBets( bets,TOKEN.Process)
       end
-    end,function (err)
-      print(err)
-    end,msg)
+    end,
+    update = function(self,table)
+      self = self or {}
+      for k,v in pairs(table) do
+        self[k] = v
+      end
+    end
+  }
+})
+
+
+Players = Players or {}
+setmetatable(Players, {
+  __index = {
+    get = function(self,id)
+      self = self or {}
+      return self[id]
+    end,
+    set = function(self,id,table)
+      self = self or {}
+      self[id] = table
+    end,
+    clear = function(self)
+      self = self or {}
+      for k,v in pairs(self) do
+        self[k] = nil
+      end
+    end,
+    increaseBets = function(self,id,bet_arr)
+      self = self or {}
+      self[id] = self[id] or {}
+      for i,v in ipairs(bet_arr) do
+        if type(v) == "number" then
+          self[id][i] = (self[id][i] or 0) + v
+        end
+      end
+    end
+  }
+})
+Draws = Draws or {}
+setmetatable(Draws,{
+  __index = {
+    get = function(self,no)
+      no = tonumber(no)
+      self = self or {}
+      local result
+      for i,v in ipairs(self) do
+        if v.round == no then
+          result = v
+        end
+      end
+      return result
+    end,
+    add = function(self,draw)
+      self = self or {}
+      table.insert(self,draw)
+    end,
+    remove = function(self,no)
+      no = tonumber(no)
+      self = self or {}
+      for i,v in ipairs(self) do
+        if v.round == no then
+          self[i] = nil
+        end
+      end
+    end,
+    count = function(self)
+      return #self
+    end
+  }
+})
+Numbers = Numbers or {}
+setmetatable(Numbers,{
+  __index = {
+    clear = function(self)
+      self = self or {}
+      for k,v in pairs(self) do
+        self[k] = nil
+      end
+    end,
+    batchIncrease = function(self,numbers)
+      self = self or {}
+      for k,v in pairs(numbers) do
+        self[k] = (self[k] or 0) + v
+      end
+    end
+  }
+})
+Bets = Bets or {}
+setmetatable(Bets,{
+  __index = {
+    add = function(self,draw)
+      self = self or {}
+      table.insert(self,draw)
+    end,
+    clear = function(self)
+      self = self or {}
+      for i,v in ipairs(self) do
+        self[i] = nil
+      end
+    end,
+    count = function(self)
+      return #self
+    end
+  }
+})
+
+
+Handlers.add("info","Info",function(msg) 
+  msg.reply({Data={
+    state=State,
+    info=Info,
+    constants=Const,
+  }})
+end)
+
+Handlers.add("save-bets",{
+  Action = "Save-Bets",
+  From = Info.agent,
+  Ticket = "_",
+  Player = "_",
+  Data = "_",
+  Price = "_",
+  Ticker = "_",
+  Denomination = "_"
+},function(msg)
+  -- if State.selected_numbers >= (10 ^ Const.DIGITS or 1000) then
+  --   Handlers.switchRound(msg)
+  -- end
+
+  local data = msg.Data
+
+  Bets:add({
+    id = msg.Ticket,
+    numbers = data.numbers,
+    purchase = {
+      amount = data.amount,
+      price = tonumber(msg.Price),
+      ticker = msg.Ticker,
+      denomination = tonumber(msg.Denomination)
+    },
+    round = {
+      round_no = State.current_round,
+    },
+    bet = {
+      count = data.count,
+      amount = data.amount
+    },
+    player = {
+      id = msg.Player,
+    },
+    ts_created = data.ts_bet,
+    nouce = msg['Ticket-Nouce']
+  })
+  State:increase({
+    bet_count = data.count,
+    bet_amount = data.amount,
+    balance = data.amount,
+    jackpot = data.amount * 0.5,
+    players_count = Players:get(msg.Player) and 0 or 1,
+    tickets = 1
+  })
+  for k,v in pairs(data.numbers) do
+    State:increase({
+      selected_numbers = Numbers[k] and 0 or 1
+    })
   end
-)
+
+  Numbers:batchIncrease(data.numbers)
+  Players:increaseBets(msg.Player,{
+    [1] = data.count,
+    [2] = data.amount,
+    [3] = 1
+  })
 
 
+  State:update({latest_bet_time = data.ts_bet})
 
---[[ 更新归档 ]]
+  if State.selected_numbers < math.floor(10 ^ (Const.DIGITS or 3)) and State.bet_amount < State.jackpot then
+    State:update({latest_draw_time = data.ts_bet + (Const.DRAW_DURATION or 86400000)})
+  end
 
-Handlers.add(
-  "_round_archived",
-  function (msg)
-    if msg.Tags.Action == const.Actions.round_archived and msg.Tags.Round then return true else return false end
+  msg.reply({
+    Action = "Bets-Saved",
+    Data = State
+  })
+
+  if not Timer then
+    Handlers.addTimer(State.latest_draw_time)
+  end
+  
+end)
+
+
+Handlers.add("get",{Action = "Get"},{
+  [{Table = "Bets"}] = function(msg)
+    msg.reply({
+      Total= tostring(#Bets),
+      Data=utils.query(Bets,tonumber(msg.Limit) or 100,tonumber(msg.Offset) or 1,{"ts_created","desc"})
+    }) 
   end,
-  function (msg)
-    xpcall(function (msg)
-      assert(ARCHIVES.repo[tostring(msg.Tags.Round)].archiver == msg.From,"archiver are not martched.")
-      ARCHIVES:removeRawData(msg.Tags.Round)
-    end,function (err)
-      print(err)
-    end,msg)
+  [{Table = "Draws"}] = function(msg)
+    msg.reply({
+      Total= tostring(#Draws),
+      Data=utils.query(Draws,tonumber(msg.Limit) or 100,tonumber(msg.Offset) or 1,{"ts_draw","desc"})
+    }) 
   end
-)
+})
 
+Handlers.add("start_pool",{
+  Action = "Start-Pool",
+  From = Info.agent,
+  Funds = "%d+"
+},function(msg)
+  if State.current_round == nil or State.current_round<=0 then
+    State:update({
+      balance = tonumber(msg.Funds),
+      jackpot = tonumber(msg.Funds) * 0.5,
+      current_round = 1,
+      round_start_time = msg.Timestamp,
+    })
 
-
---[[ 查询当前或指定轮次的信息 ]]
-
-Handlers.add(
-  "getRoundInfo",
-  Handlers.utils.hasMatchingTag("Action",const.Actions.get_round_info),
-  function (msg)
-    xpcall(function (msg)
-      local target_round = nil
-      if msg.Round == nil or msg.Round == CURRENT.no then
-        target_round = CURRENT
-      else
-        target_round = ARCHIVES.repo[msg.Round]
-      end
-      assert(target_round~=nil,"The round is not exists")
-      if not target_round.archived then
-        messenger:sendRoundInfo(target_round, TOKEN, msg)
-      else
-        messenger:forwardTo(target_round.archiver,msg)
-      end
-        
-    end,function (err)
-      print(err)
-      messenger:sendError(err,msg.From)
-    end,msg)
+    Const.PRICE = tonumber(msg.Price) or msg.Data.price
+    Const.DIGITS = msg.Data.digits
   end
-)
-
---[[ 用户查询当前或指定轮次的下注信息 ]]
-
-Handlers.add(
-  'fetchBets',
-  Handlers.utils.hasMatchingTag("Action",const.Actions.bets),
-  function (msg)
-    xpcall(function (msg)
-
-      local target_round = nil
-      if msg.Round == nil or msg.Round == CURRENT.no then
-        target_round = CURRENT
-      else
-        target_round = ARCHIVES.repo[msg.Round]
-      end
-      assert(target_round~=nil,"The round is not exists")
-      
-      if not target_round.archived then
-        local user_bets = target_round.bets[msg.From]
-        assert(user_bets~=nil, "no bets you pleaced in this round.")
-        messenger:replyUserBets(msg.From,{
-          user_bets = user_bets,
-          request_type = msg.RequestType or "",
-          no = target_round.no
-        })
-      else
-        messenger:forwardTo(target_round.archiver,msg)
-      end
-
-    end,function (err)
-      print(err)
-      messenger:sendError(err,msg.From)
-    end,msg)
-  end
-)
-
--- [[ 查询用户的信息 ]]
-
-Handlers.add(
-  "getUserInfo",
-  Handlers.utils.hasMatchingTag("Action", const.Actions.user_info),
-  function (msg)
-    xpcall(function (msg)
-      local user = USERS:queryUserInfo(msg.From)
-      assert(user ~= nil, "User not exists.")
-      local request_type = msg[const.Actions.request_type] or ""
-      local data_str = ""
-      if user then
-        if request_type == "json" then
-          local json = json or require("json")
-          data_str = json.encode(user)
-        else
-          data_str = string.format([==[
-  %s
-  -------------------------------------------
-  * Number of Wins :   %d
-  * Rewards Balance :  %s %s
-  * Total Rewards :    %s %s
-  * Bets Amount :      %d
-  * Bets Placed :      %d
-  -------------------------------------------
-  First bet on %d
-          ]==],user.id, user.total_rewards_count, TOOLS:toBalanceValue(user.rewards_balance),TOKEN.Ticker, TOOLS:toBalanceValue(user.total_rewards_amount),TOKEN.Ticker, user.bets_amount,user.bets_count,user.create_at)
-        end  
-      end
-      local msssage = {
-        Target = msg.From,
-        Action = const.Actions.reply_user_info,
-        Data = data_str
-      }
-      ao.send(msssage)
-    end,function (err)
-      messenger:sendError(err,msg.From)
-    end,msg)
-  end
-)
+  msg.reply({
+    Action = "Pool-Started",
+    Data = State
+  })
+end)
 
 
 
-Handlers.add(
-  "getInfo",
-  Handlers.utils.hasMatchingTag("Action", const.Actions.info),
-  function (msg)
-    local message = {
-      Target = msg.From,
-      Action = const.Actions.reply_info,
-      Tags = {
-        ["Name"] = NAME 
-      },
-      Data = [==[
-      aolotto
-      ]==]
+
+Handlers.switchRound = function(msg)
+  local archive = nil
+  if Archive == nil then
+
+    State:update({
+      round_end_time = msg.Timestamp or os.time()
+    })
+  
+    archive = {
+      state = utils.deepCopy(State),
+      bets = utils.deepCopy(Bets),
+      numbers = utils.deepCopy(Numbers),
+      players = utils.deepCopy(Players)
     }
-    ao.send(message)
-  end
-)
+  
+    State:increase({
+      current_round = 1
+    })
+    State:update({
+      round_end_time = nil,
+      round_start_time = msg.Timestamp,
+      jackpot= (archive.state.balance - archive.state.jackpot)*0.5,
+      balance= archive.state.balance - archive.state.jackpot,
+      bet_count=0,
+      bet_amount=0,
+      latest_bet_time=0,
+      latest_draw_time=0,
+      alt_reward=0,
+      selected_numbers=0,
+      players_count=0,
+      tickets = 0
+    })
+    Players:clear()
+    Numbers:clear()
+    Bets:clear()
+    Archive = archive
+    Timer = nil
 
-Handlers.add(
-  "getWinners",
-  Handlers.utils.hasMatchingTag("Action", const.Actions.winners),
-  function (msg)
-    xpcall(function (msg)
-      assert(msg.Round ~= nil,"Missed round tag.")
-      local round = ARCHIVES.repo[msg.Round]
-      assert(round ~= nil, "The round is not exists")
-      local msssage = {
-        Target = msg.From,
-        Action = const.Actions.reply_winners,
-        Data = json.encode(round.winners)
+  else
+    archive = Archive
+  end
+  
+  Handlers.once("once_archived_"..archive.state.current_round,{
+    Action = "Archived",
+    From = ao.id,
+    Round = "%d+"
+  },function(m)
+    print('archived and draw')
+    local draw = Handlers.draw(m.Data,m)
+    Draws:add(draw)
+    Archive = nil
+    print('Round ['..m.Data.state.current_round.."] has been drawn.")
+    Send({
+      Target=Info.agent,
+      Action = "Draw-Notice",
+      Data = {
+        draw = draw,
+        players = m.Data.players,
+        state = m.Data.state
       }
-      ao.send(msssage)
-    end,function (err)
-      messenger:sendError(err,msg.From)
-    end,msg)
-  end
-)
+    })
+  end)
 
+  Send({
+    Target = ao.id,
+    Action = "Archived",
+    Round = tostring(archive.state.current_round),
+    Data = archive
+  })
 
--- [[ 领取奖金 ]]
+end
 
-Handlers.add(
-  "claim",
-  Handlers.utils.hasMatchingTag("Action", const.Actions.claim),
-  function (msg)
-    xpcall(function (msg)
-      local user = USERS:queryUserInfo(msg.From)
-      assert(user ~= nil,"User not exists")
-      local err_str = string.format("Rewards balance is below the claim threshold of %s %s.",TOOLS:toBalanceValue(10),TOKEN.Ticker)
-      assert(user.rewards_balance and user.rewards_balance >= 10,err_str)
-      local qty =  math.floor(user.rewards_balance * ((1-STATE.tax_rete) or 0.9))
-      local message = {
-        Target = TOKEN.Process,
-        Action = "Transfer",
-        Recipient = msg.From,
-        Quantity = tostring(qty),
-        [const.Actions.x_transfer_type] = const.Actions.claim,
-        [const.Actions.x_amount] = tostring(user.rewards_balance),
-        [const.Actions.x_tax] = tostring(STATE.tax_rete),
-        [const.Actions.x_pushed_for] = msg["Pushed-For"]
-      }
-      ao.send(message)
-    end,function (err)
-      print(err)
-      messenger:sendError(err,msg.From) 
-    end,msg)
-  end
-)
+Handlers.draw = function(archive,msg)
+  assert(archive~=nil and type(archive) == "table","missed archive data")
+  assert(msg~=nil and type(msg) == "table","missed msg")
+  local latest_bet = archive.bets[#archive.bets]
+  local block = drive.getBlock(msg['Block-Height'] or 1520692)
+  local seed = latest_bet.id ..'_'.. block.hash ..'_'.. latest_bet.nouce ..'_'.. archive.state.bet_count
+  local lucky_number = utils.getDrawNumber(seed,Const.DIGITS or 3)
+  print("lucky_number:"..lucky_number)
+  archive.numbers = archive.numbers or {}
+  local win_number_count = archive.numbers[lucky_number]
+  local per_number_share
+  local win_bets = {}
+  local winners_count = 0
+  local winners = {}
+  local rewards = {}
 
+  if win_number_count and win_number_count > 0 then
+    per_number_share = math.floor(archive.state.jackpot / win_number_count)
+    for i,bet in ipairs(archive.bets) do
+      local matched_number_count = bet.numbers[lucky_number] or 0 
+      if matched_number_count >= 1 then
+        table.insert(win_bets,{
+          matched_number_count = matched_number_count,
+          rewards = matched_number_count * per_number_share,
+          player = bet.player.id,
+          ticket = bet.id,
+          ts_created = bet.ts_created,
+          purchase = bet.purchase
+        })
+      end
+    end
 
--- [[ 奖金下发后更新奖金余额 ]]
-
-Handlers.add(
-  "_debit_claim",
-  function (msg)
-    local triggered = msg.From == TOKEN.Process and msg.Tags.Action == "Debit-Notice" and msg.Tags[const.Actions.x_transfer_type] == const.Actions.claim
-    if triggered then return true else return false end
-  end,
-  function (msg)
-    xpcall(function (msg)
-      local user = USERS:queryUserInfo(msg.Recipient)
-      assert(user~=nil,"User is not exists")
-      assert(msg.Tags[const.Actions.x_amount] ~= nil, "missed X-Amount tag.")
-      user.rewards_balance = math.max(user.rewards_balance - tonumber(msg.Tags[const.Actions.x_amount]),0)
-      user.update_at = msg.Timestamp
-      USERS:replaceUserInfo(user)
-      -- 减少奖池总额
-      STATE:decreasePoolBalance(msg.Quantity)
-      -- 增加奖励总额
-      STATE:increaseClaimPaid(msg.Quantity)
-      messenger:sendClaimNotice(msg,TOKEN)
-    end,function (err)
-      print(err)
-      messenger:sendError(err,OPERATOR)
-    end,msg)
-  end
-)
-
-Handlers.add(
-  "_debit_op_withdraw",
-  function (msg)
-    local triggered = msg.From == TOKEN.Process and msg.Tags.Action == "Debit-Notice" and msg.Tags[const.Actions.x_transfer_type] == const.Actions.OP_withdraw
-    if triggered then return true else return false end
-  end,
-  function (msg)
-    xpcall(function (msg)
-      STATE:decreaseOperatorBalance(msg.Quantity)
-      STATE:decreasePoolBalance(msg.Quantity)
-      STATE:increaseWithdraw(msg.Quantity)
-    end,function (err)
-      print(err)
-      messenger:sendError(err,OPERATOR)
-    end,msg)
-  end
-)
-
--- [[ 运营方提现接口 ]]
-Handlers.add(
-  "op.withdraw",
-  TOOLS:operatingMatch(msg,"Action",const.Actions.OP_withdraw),
-  function (msg)
-    xpcall(function (msg)
-      local TOKEN_PROCESS = msg.Tags.Token or TOKEN.Process
-      local is_rewards_token = TOKEN_PROCESS == TOKEN.Process
-      if is_rewards_token then
-        assert(math.floor(STATE.operator_balance) >= 1, "Insufficient withdrawal amount")
-        local message = {
-          Target = TOKEN_PROCESS,
-          Quantity = tostring(math.floor(STATE.operator_balance)),
-          Recipient = msg.From,
-          Action = "Transfer",
-          [const.Actions.x_transfer_type] = const.Actions.OP_withdraw,
-          [const.Actions.x_pushed_for] = msg["Pushed-For"]
-        }
-        ao.send(message)
+    for i,v in ipairs(win_bets) do
+      if winners[v.player] then
+        local winner = winners[v.player]
+        table.insert(winner.tickets,v.ticket)
+        winner.rewards = winners[v.player].rewards + v.rewards
+        winners[v.player] = winner
       else
-        local message = {
-          Target = TOKEN_PROCESS,
-          Quantity = msg.Tags.Quantity or "",
-          Recipient = msg.From,
-          Action = "Transfer"
+        local tickets = {}
+        table.insert(tickets,v.ticket)
+        winners[v.player] = {
+          rewards = v.rewards,
+          tickets = tickets
         }
-        ao.send(message)
+        winners_count = winners_count + 1
       end
-      
-    end,function (err)
-      print(err)
-      messenger:sendError(err,msg.From)
-    end,msg)
-  end
-)
-
-
-
-Handlers.add(
-  "op.archive_round",
-  TOOLS:operatingMatch(msg,"Action",const.Actions.archive_round),
-  function (msg)
-    xpcall(function (msg)
-      print("archive start")
-      assert(msg.Tags.Round ~= nil, "missed round tag.")
-      assert(msg.Tags.Archiver ~= nil, "missed archiver tag.")
-      local archive = ARCHIVES.repo[tostring(msg.Tags.Round)]
-      if archive then
-        assert(archive.archived == nil or  archive.archived == false,"already archived.")
-        ao.send({
-          Target = msg.Tags.Archiver,
-          Action = const.Actions.archive_round,
-          Round = msg.Tags.Round,
-          Data = json.encode(archive)
-        })
-        ARCHIVES.repo[msg.Tags.Round].archiver = msg.Tags.Archiver
-      end
-    end,function (err)
-      print(err)
-    end,msg)
-  end
-)
-
-Handlers.add(
-  "op.changer_archiver",
-  TOOLS:operatingMatch(msg,"Action",const.Actions.change_archiver),
-  function (msg)
-    xpcall(function (msg)
-      print("change archiver")
-      assert(msg.Tags.Round ~= nil, "missed round tag.")
-      assert(msg.Tags.Archiver ~= nil, "missed archiver tag.")
-      local archive = ARCHIVES.repo[tostring(msg.Tags.Round)]
-      if archive then
-        ARCHIVES.repo[msg.Tags.Round].archiver = msg.Tags.Archiver
-      end
-    end,function (err)
-      print(err)
-    end,msg)
-  end
-)
-
-
-
-
-
-Handlers.add(
-  "op.add_buff",
-  TOOLS:operatingMatch(msg,"Action",const.Actions.add_buff),
-  function(msg)
-    print("do add buff")
-  end
-)
-
-
-Handlers.add(
-  "op.pause",
-  TOOLS:operatingMatch(msg,"Action",const.Actions.pause_round),
-  function(msg)
-    xpcall(
-      function(msg)
-        STATE:set("run",0)
-        STATE:set("pause_start",msg.Timestamp)
-      end,
-      function(err)
-        print(err)
-        messenger:sendError(err,msg.From)
-      end,
-      msg
-    )
-  end
-)
-
-Handlers.add(
-  "op.restart",
-  TOOLS:operatingMatch(msg,"Action",const.Actions.round_restart),
-  function(msg)
-    xpcall(
-      function(msg)
-        STATE:set("run",1)
-        STATE:set("pause_end",msg.Timestamp)
-      end,
-      function(err)
-        print(err)
-        messenger:sendError(err,msg.From)
-      end,
-      msg
-    )
-  end
-)
-
-Handlers.add(
-  "op.start",
-  TOOLS:operatingMatch(msg,"Action",const.Actions.round_start),
-  function(msg)
-    xpcall(
-      function(msg)
-        STATE:set("run",1)
-        STATE:set("start_time",msg.Timestamp)
-        STATE:set("start_height",msg['Block-Height'])
-      end,
-      function(err)
-        print(err)
-        messenger:sendError(err,msg.From)
-      end,
-      msg
-    )
-  end
-)
-
-
---[[开奖触发]]
-
-Handlers.add(
-  "_cron",
-  Handlers.utils.hasMatchingTag("Action", "Cron"),
-  function (msg)
-    -- 检查当前轮次是否结束
-    if msg.Timestamp >= CURRENT.start_time + CURRENT.duration then
-      if CURRENT.bets_amount >= CURRENT.base_rewards or msg.Timestamp >= CURRENT.start_time + CURRENT.duration * 7 then
-        ao.send({
-          Target=ao.id,
-          Action=const.Actions.finish,
-        })
-      end
+      rewards[v.player] = winners[v.player].rewards
     end
-    -- 触发开奖
-    if bint(CURRENT.no) > 1 then
-      local prev_no = tostring(bint(CURRENT.no)-1)
-      assert(ARCHIVES.repo[prev_no]~=nil,"round not exist")
-      if not ARCHIVES.repo[prev_no].drawn then
-        if msg['Block-Height'] >= ARCHIVES.repo[prev_no].end_height + 5 then
-          ao.send({
-            Target=ao.id,
-            Action=const.Actions.draw,
-            Round=prev_no
-          })
-        end
-      end
-    end
+    
+  else
+    table.insert(win_bets,{
+      matched_number_count = 0,
+      rewards = archive.state.jackpot,
+      player = latest_bet.player.id,
+      ticket = latest_bet.id,
+      ts_created = latest_bet.ts_created,
+      purchase = latest_bet.purchase
+    })
+    rewards[latest_bet.player.id] = archive.state.jackpot
   end
-)
+  
+  local draw = {
+    round = archive.state.current_round,
+    lucky_number = lucky_number,
+    ts_draw = msg.Timestamp,
+    jackpot = archive.state.jackpot,
+    per_number_share = per_number_share,
+    win_number_count = win_number_count,
+    draw_type = (win_number_count and win_number_count > 0) and "WIN" or "NON-WIN",
+    winners_count = winners_count,
+    archive = msg.Id,
+    seed = seed,
+    win_bets = win_bets,
+    winners = winners,
+    rewards = rewards
+  }
 
+  return draw
+
+end
+
+
+
+Handlers.addTimer = function(time)
+  if not time then
+    time = os.time() + (Const.DRAW_DURATION or 86400000)
+  end
+  Send({
+    Target = Info.timer,
+    Action = "Add-Subscription",
+    Time = tostring(time)
+  })
+  Timer = time
+end
+
+
+Handlers.add("timer",{
+  From = Info.timer,
+  Action = "Time-Up"
+},function(msg)
+  if msg.Timestamp >= State.latest_draw_time then
+    if State.latest_draw_time > 0 then
+      Handlers.switchRound(msg)
+    end
+  else
+    Handlers.addTimer(State.latest_draw_time)
+  end
+end)
 
