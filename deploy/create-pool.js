@@ -166,24 +166,24 @@ async function main() {
       console.log("|- Added!")
 
 
-      let filePath = file || "pool.lua"
+      // let filePath = file || "pool.lua"
       
-      if (fs.existsSync(filePath)) {
-        const projectStructure = await createProjectStructure(filePath)
-        const [executable, modules] = createExecutableFromProject(projectStructure)
-        const msgid3 = await message({
-          process: spawned_process,
-          data: executable,
-          tags: [{
-            name: "Action",
-            value: "Eval"
-          }],
-          signer: createDataItemSigner(jwk)
-        })
-        if(!msgid3) throw("eval error")
-        console.log("|- init process: "+ msgid3)
+      // if (fs.existsSync(filePath)) {
+      //   const projectStructure = await createProjectStructure(filePath)
+      //   const [executable, modules] = createExecutableFromProject(projectStructure)
+      //   const msgid3 = await message({
+      //     process: spawned_process,
+      //     data: executable,
+      //     tags: [{
+      //       name: "Action",
+      //       value: "Eval"
+      //     }],
+      //     signer: createDataItemSigner(jwk)
+      //   })
+      //   if(!msgid3) throw("eval error")
+      //   console.log("|- init process: "+ msgid3)
 
-      }
+      // }
       
   
       console.log("🎉 Done: "+spawned_process)

@@ -33,4 +33,27 @@ function drive.getTx(txId)
   return contents
 end
 
+function drive.getData(txId)
+  local file = io.open('/data/' .. txId)
+  if not file then
+    return nil, "File not found!"
+  end
+  local contents = file:read(
+    file:seek('end')
+  )
+  file:close()
+  return contents
+end
+
+function drive.getDataItem(txId)
+  local file = io.open('/tx2/' .. txId)
+  if not file then
+    return nil, "File not found!"
+  end
+  local contents = file:read(
+    file:seek('end')
+  )
+  file:close()
+  return contents
+end
 return drive

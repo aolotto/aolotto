@@ -9,16 +9,17 @@
 		"aolotto_alt": "aos 2vheopvdwEfont-jQC_G9--6bV2hGn-IzlHxsq4CLWY --wallet wallet.json",
 		"altoken": "aos sdqQuIU6WNT1zVNculn814nVhol2XXhDxqgCrUpCtlA --wallet wallet.json",
 		"al_fundation": "aos 5PwOcPRPmAJH_Fd-tXlGzISbeUxInGXl8pvu-tIUvwI --wallet wallet.json",
-		"AddPool:dev": "node --env-file=.env.local deploy/create-pool.js --wallet=../.aos.json ",
-		"UpdatePools:dev": "node --env-file=.env.local deploy/update-pool.js --wallet=../.aos.json",
-		"ListPools:dev": "node --env-file=.env.local deploy/list-pools.js",
+		"add-pool:dev": "node --env-file=.env.local deploy/create-pool.js --wallet=../.aos.json ",
+		"update-pools:dev": "node --env-file=.env.local deploy/update-pool.js --wallet=../.aos.json",
+		"list-pools:dev": "node --env-file=.env.local deploy/list-pools.js",
 		"aolotto:test": "node --env-file=.env.local deploy/test.js --wallet hi",
-		"agent:dev": "aos fqDCPQubE9azVpiB92FOXb-ydwkqCiQH9y-p3e53RT0"
+		"agent:dev": "aos UIhiWhE4JJO9vaBaQsT-1bvUbG670LJfXgmaMPPCZKQ"
 	},
 	"author": "yeshua.ar",
 	"license": "ISC",
 	"dependencies": {
 		"@permaweb/aoconnect": "^0.0.56",
+		"aoffp": "^0.0.7",
 		"dotenv": "^16.4.5",
 		"minimist": "^1.2.8"
 	},

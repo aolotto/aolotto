@@ -41,3 +41,13 @@ Handlers.add("add-subscriber",Handlers.utils.hasMatchingTag("Action","Add-Subscr
     })
   end
 end)
+
+
+Handlers.add("registe-timer",Handlers.utils.hasMatchingTag("Action","Registe-Timer"),function(msg)
+  if not utils.includes(msg.From,ao.authorities) then
+    table.insert(ao.authorities,msg.From)
+    msg.reply({
+      Action = "Subscriber-Added"
+    })
+  end
+end)
