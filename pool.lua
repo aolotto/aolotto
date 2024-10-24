@@ -3,17 +3,17 @@ local drive = require("modules.drive")
 local utils = require("modules.utils")
 local crypto = require(".crypto")
 
-AGENT = AGENT or ao.env.Process.Tags.Agent or "5U0TGvICnsl5dY7hVu-DfLko87TLPeksBZAAUvngZu4"
+AGENT = AGENT or ao.env.Process.Tags.Agent or "mvM7nLGsgdEYLRgi85haT_6XuINRevh8dLpxMXsYpZM"
 TIMER = TIMER or ao.env.Process.Tags.Timer or ""
 TOKEN = TOKEN or ao.env.Process.Tags.Token or "UHMKwYgQzDduuAGr85DQxhVpmak9vXM4GVL18nQ9Iak"
 MINER = MINER or ao.env.Process.Tags.Miner or ""
-TAX = TAX or 0.01
+TAX = TAX or 0.1
 RUN = RUN or 1
 PRICE = PRICE or 100000000000
 DIGITS = DIGITS or 3
 DRAW_DELAY = DRAW_DELAY or 86400000
 JACKPOT_SCALE = JACKPOT_SCALE or 0.5
-WITHDRAW_MIN = WITHDRAW_MIN or 1
+WITHDRAW_MIN = WITHDRAW_MIN or 10
 TYPE = "3D"
 
 
@@ -40,26 +40,7 @@ State = State or {
 
 if not Token then
   local token_id = TOKEN or ao.env.Process.Tags.Token
-  if token_id then
-    Handlers.once("once_get_tokeninfo_"..token_id,{
-      From = token_id,
-      Name = "_",
-      Ticker = "_",
-      Logo = "_",
-      Denomination = "_"
-    },function(m)
-      Token = {
-        id = m.From,
-        name = m.Name,
-        ticker = m.Ticker,
-        denomination = tonumber(m.Denomination),
-        logo = m.Logo,
-      }
-      if not Info.logo then Info.logo = m.Logo end
-      if not Info.name then Info.name = m.Ticker end
-    end)
-    Send({Target=token_id,Action="Info"})
-  end
+  if token_id then Handlers.fetchTokenInfo(token_id) end
 end
 
 Bets = Bets or {}
@@ -183,27 +164,29 @@ Handlers.archive = function(...)
       ts_round_end = 0,
       ts_latest_draw = 0
     })
+    print("Round switch to "..State.round)
   end
-  print("Round switch to "..State.round)
-
-  Handlers.once("_once_archive_"..Archive.state.round,{
-    From = ao.id,
-    Action = "Archive",
-    Round = tostring(Archive.state.round)
-  },function(m)
-    print("The round ["..m.Round.."] has been archived as: "..m.Id)
-    Handlers.draw(m.Id, m.Data or Archive, m['Block-Height'], m.Timestamp)
-    Archive = nil
-  end)
-
-  Send({
-    Target = ao.id,
-    Action = "Archive",
-    Round = tostring(Archive.state.round),
-    Data = Archive
-  })
-
   
+  if Archive then
+  
+    Handlers.once("_once_archive_"..Archive.state.round,{
+      From = ao.id,
+      Action = "Archive",
+      Round = tostring(Archive.state.round)
+    },function(m)
+      print("The round ["..m.Round.."] has been archived as: "..m.Id)
+      Handlers.draw(m.Id, m.Data or Archive, m['Block-Height'], m.Timestamp)
+      Archive = nil
+    end)
+
+    Send({
+      Target = ao.id,
+      Action = "Archive",
+      Round = tostring(Archive.state.round),
+      Data = Archive
+    })
+
+  end
 
 end
 
@@ -234,11 +217,15 @@ Handlers.draw = function(...)
     for i,v in ipairs(bets) do
       if v.numbers[lucky_number] then
         winners = winners + 1
-        rewards[v.player] = v.numbers[lucky_number] * share
+        local _prize = v.numbers[lucky_number] * share
+        local _amount = players[v.player][2] or v.amount
+        rewards[v.player] ={_prize,_amount}
       end
     end
   else
-    rewards[latest_bet.player] = state.jackpot
+    local _prize = state.jackpot
+    local _amount = players[latest_bet.player][2] or latest_bet.amount
+    rewards[latest_bet.player] = {_prize,_amount}
   end
 
 
@@ -312,91 +299,59 @@ Handlers.once("once_listed_on_agent",{
     State.ts_round_start = msg.Timestamp
   end
 end)
---[[
-
-Pool.lua:
-
-  State = {
-    ts_latest_draw = 1729393341037,
-    ts_round_start = 1729393341037,
-    total_palyers = 1,
-    bet = { 7, 700000000000, 6, 8 }, -- quantity, amount, ticket, numbers
-    ts_latest_bet = 1729306941037,
-    balance = 700000000000,
-    prize = { 350000000000.0, 350000000000.0, 0 }, -- balance, total, withdraw
-    round = 0
-  }
-
-  Draws = {{
-    round = 1,
-    lucky_number = "234",
-    total_palyers = 2,
-    jackpot = 23456666666660000,
-    rewards = {
-      "...." = 123455500000,
-      "...." = 3456634000
-    },
-    archive = "...",
-    winners = 0,
-    ts_draw = 1729136171803,
-    bet = {0,0,0}
-    latest_bet = "....",
-    block_hash = "...."
-  }}
-
-  Players = {"...."={0,0,0}}
-
-  Bets= {{
-    amount = 100000000000,
-    id = "2hkvtOavv_phVzoXUX2KxQlIUc68QRigLT-39ntHjJE",
-    quantity = 1,
-    player_id = "TrnCnIGq1tx8TV8NA7L2ejJJmrywtwRfq9Q7yNV6g2A",
-    token = { "UHMKwYgQzDduuAGr85DQxhVpmak9vXM4GVL18nQ9Iak", "XIN", 12 },
-    price = 100000000000,
-    numbers = {
-      333 = 1
-    },
-    ts_created = 1729306941037,
-    x_numbers = "333*1",
-    round = 0
-  }}
-
-  Numbers = {"..."=0}
 
 
-Agent.lua:
-
-  Stats = {
-    total_players = 0,
-    total_pools = 0,
-    total_mine = 0,
-    ...
-  }
-
-  Pools = {"..."={
-    id="...",
-    token="...",
-    stats = { ... },
-    ts_created = 1729306941037
-  }}
-
-  Players = {"..."={
-  ` "mine" = {},
-    "..pid.." = {
-      rounds = {
-        "..." = {0,0,0,0}
+Handlers.fetchTokenInfo = function(token)
+  token = token or TOKEN
+  if token~=nil and type(token)=="string" then
+    Handlers.once("once_get_tokeninfo_"..token,{
+      From = token,
+      Name = "_",
+      Ticker = "_",
+      Logo = "_",
+      Denomination = "_"
+    },function(m)
+      Token = {
+        id = m.From,
+        name = m.Name,
+        ticker = m.Ticker,
+        denomination = tonumber(m.Denomination),
+        logo = m.Logo,
       }
-      bet = {0,0,0,0}
-      rewards = {0,0,0},
-    }
-  }}
+      if not Info.logo then Info.logo = m.Logo end
+      if not Info.name then Info.name = m.Ticker end
+      print("Token info updated.")
+    end)
+    Send({Target=token,Action="Info"})
+  end
+end
 
-  Notices = {{
-  }}
+Handlers.resetPool = function(...)
+  State = {
+    round = 1,
+    bet = {0,0,0}, --@param bet table {quantity, amount, tickets }
+    jackpot = 0,
+    picks = 0,
+    balance = 0, -- {current_banlance, progressive_balance}
+    players = 0, -- {current, total}
+    ts_latest_draw = 0,
+    ts_latest_bet = 0,
+    ts_round_start = 0,
+    ts_round_end = 0
+  }
+  
+  Bets = {}
+  Players = {}
+  Draws = {}
+  Numbers = {}
 
-]]
+  AGENT = select(1,...) or AGENT or ao.env.Process.Tags.Agent or "mvM7nLGsgdEYLRgi85haT_6XuINRevh8dLpxMXsYpZM"
+  TIMER = select(2,...) or TIMER or ao.env.Process.Tags.Timer or ""
+  TOKEN = select(3,...) or TOKEN or ao.env.Process.Tags.Token or "UHMKwYgQzDduuAGr85DQxhVpmak9vXM4GVL18nQ9Iak"
+  MINER = select(4,...) or MINER or ao.env.Process.Tags.Miner or ""
+
+  local token_id = TOKEN or ao.env.Process.Tags.Token
+  if token_id then Handlers.fetchTokenInfo(token_id) end
 
 
-Handlers.test = function(...)
-  print(select(1,...))
 end

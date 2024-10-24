@@ -53,9 +53,9 @@ utils.getDrawNumber = function(seed,len)
   return numbers
 end
 
-utils.increase = function(targetTable, fieldsToAdd)
+utils.increase = function(targetTable, fields)
   assert(targetTable~=nil and type(targetTable) == "table", "The target not a table or non exists")
-  for key, value in pairs(fieldsToAdd) do
+  for key, value in pairs(fields) do
       if type(value) == "table" then
           if not targetTable[key] then
               targetTable[key] = {} 
@@ -67,14 +67,14 @@ utils.increase = function(targetTable, fieldsToAdd)
   end
 end
 
-utils.decrease = function(targetTable, fieldsToAdd)
+utils.decrease = function(targetTable, fields)
   assert(targetTable~=nil and type(targetTable) == "table", "The target not a table or non exists")
-  for key, value in pairs(fieldsToAdd) do
+  for key, value in pairs(fields) do
       if type(value) == "table" then
           if not targetTable[key] then
               targetTable[key] = {} 
           end
-          increase(targetTable[key], value)
+          decrease(targetTable[key], value)
       else
           targetTable[key] = (targetTable[key] or 0) - value
       end
