@@ -1,6 +1,8 @@
 local utils = require(".utils")
 local ao = require(".ao")
 
+Manager = Manager or "mvM7nLGsgdEYLRgi85haT_6XuINRevh8dLpxMXsYpZM"
+
 Subscriptions = Subscriptions or {}
 
 Handlers.add("cron",Handlers.utils.hasMatchingTag("Action","Cron"),function(msg)
@@ -10,7 +12,8 @@ Handlers.add("cron",Handlers.utils.hasMatchingTag("Action","Cron"),function(msg)
       if msg.Timestamp >= v.Timestamp then
         print("send time-up to "..v.Process)
         ao.send({
-          Target = v.Process,
+          Target = Manager,
+          Subscriber = v.Process,
           Action = "Time-Up"
         })
         Subscriptions[i] = nil
@@ -34,8 +37,10 @@ end)
 Handlers.add("add-subscriber",Handlers.utils.hasMatchingTag("Action","Add-Subscriber"),function(msg) 
   print("add-subscriber")
   assert(msg.Subscriber ~= nil,"missed process tag")
-  if msg.From == Owner then
-    table.insert(ao.authorities,msg.Subscriber)
+  if msg.From == Manager then
+    if not utils.includes(msg.Subscriber,ao.authorities) then
+      table.insert(ao.authorities,msg.Subscriber)
+    end
     msg.reply({
       Action = "Subscriber-Added"
     })
@@ -43,11 +48,3 @@ Handlers.add("add-subscriber",Handlers.utils.hasMatchingTag("Action","Add-Subscr
 end)
 
 
-Handlers.add("registe-timer",Handlers.utils.hasMatchingTag("Action","Registe-Timer"),function(msg)
-  if not utils.includes(msg.From,ao.authorities) then
-    table.insert(ao.authorities,msg.From)
-    msg.reply({
-      Action = "Subscriber-Added"
-    })
-  end
-end)

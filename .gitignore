@@ -1,5 +1,6 @@
 wallet.json
 test.lua
+eval.lua
 processes.txt
 .vscode
 *.backup

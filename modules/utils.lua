@@ -107,4 +107,21 @@ utils.parseSting = function(str,symbol)
   return result
 end
 
+utils.query = function(self,limit,offset,sort)
+  local temp = {}
+  table.move(self, 1, #self, 1, temp)
+  if(sort) then
+    table.sort(temp,function(a,b) 
+      if sort[2] == "desc" then
+        return a[sort[1]] > b[sort[1]]
+      else
+        return a[sort[1]] < b[sort[1]]
+      end
+    end)
+  end
+  local result = {}
+  table.move(temp, offset or 1, math.min((limit or #temp) + (offset or 0)-1, #temp),1, result)
+  return result
+end
+
 return utils

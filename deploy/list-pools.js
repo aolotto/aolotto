@@ -20,7 +20,7 @@ async function fetchPools(agent_id){
     const {Messages} = await dryrun({
       process: agent_id,
       data: '',
-      tags: [{name: 'Action', value: 'All-Pools'}],
+      tags: [{name: 'Action', value: 'Pools'}],
       anchor: '1234',
     });
     

@@ -20,7 +20,7 @@ async function fetchPools(agent_id){
     const {Messages} = await dryrun({
       process: agent_id,
       data: '',
-      tags: [{name: 'Action', value: 'All-Pools'}],
+      tags: [{name: 'Action', value: 'Pools'}],
       anchor: '1234',
     });
     
@@ -66,7 +66,7 @@ async function main() {
       if(pools?.length<1) throw("no pools to eval")
       let count = 0
       for (var pool in pools) {
-        if(pools[pool]?.pool_id){
+        if(pools[pool]?.id){
           count = count+1
           const pid = pools[pool]?.pool_id
           console.log("\n\u001b[90m-> Pool "+count+'\u001b[0m')

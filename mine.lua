@@ -1,6 +1,6 @@
 --[[
   Extend the token interface, 
-  allowing the Agent to mint new tokens for betting and mining, 
+  allowing the AGENT to mint new tokens for betting and mining, 
   with each minting being 0.01% of the balance (MaxSupply - TotalSupply).
 ]]
 
@@ -29,7 +29,7 @@ local utils = {
 }
 
 
-AGENT = AGENT or "fqDCPQubE9azVpiB92FOXb-ydwkqCiQH9y-p3e53RT0"
+STORE = STORE or "l0RxEkP1pTaFA8J09aNjcGi9QD4Sz9VPNKnFxc3fch0"
 MINE_RATIO = MINE_RATIO or 0.0001
 
 
@@ -41,12 +41,11 @@ Handlers.add(
   'mine',
   {
     Action = "Mine",
-    From = AGENT,
-    Pool = "_",
-    Round="%d+"
+    From = STORE,
+    Miner = "_",
+    Productivity = "%d+"
   },
   function(msg)
-    assert(type(msg.Round) == 'string', 'Round is required!')
 
     if not MaxSupply then MaxSupply = utils.toBalanceValue(bint(210000000) * bint(10) ^ bint(Denomination)) end
     
@@ -54,22 +53,24 @@ Handlers.add(
     if not NumberOfMine then NumberOfMine = 0 end
 
     local unSupplied = utils.subtract(MaxSupply,TotalSupply)
+    local productivity =  math.min(tonumber(msg.Productivity),1)
     
     assert(bint(unSupplied) > 0, 'The total supply has reached its maximum limit!')
-    local quantity = string.format("%.f",bint.__mul(unSupplied, MINE_RATIO or 0.0001))
+    local quantity = string.format("%.f",bint.__mul(unSupplied * productivity, MINE_RATIO or 0.0001))
     Balances[msg.From] = utils.add(Balances[msg.From], quantity)
     TotalSupply = utils.add(TotalSupply, quantity)
     NumberOfMine = NumberOfMine + 1
 
-    Send({
-      Target = msg.From,
+
+    msg.reply({
       Action = "Mined",
       Quantity = quantity,
-      Pool = msg.Pool,
-      Round = msg.Round,
+      Productivity = tostring(productivity),
+      Miner = msg.Miner,
       ['Mine-Count'] = tostring(NumberOfMine),
-      Data = "Successfully Mined Token : " .. quantity
+      Data = "Successfully Mined : " .. quantity .. " for " .. msg.Miner
     })
+
 
 end)
 

@@ -5,6 +5,7 @@ local crypto = require(".crypto")
 
 
 TAXER = TAXER or Owner
+MINE_TOKEN = MINE_TOKEN or nil
 
 State = State or {}
 Pools = Pools or  {}
@@ -12,6 +13,8 @@ Players = Players or {}
 Balances = Balances or {}
 Taxation = Taxation or {}
 Leaderboard = Leaderboard or {}
+Miners = Miners or {}
+Mined = Mined or {}
 
 -- This function forwards a ticket to the specified pool.
 -- It checks if the pool exists and if the quantity is within the pool's price range.
@@ -24,7 +27,14 @@ Handlers.add("forward-ticket",{
   ['X-Numbers'] = "_",
   From = function(from,m) return Pools[m['X-Pool']].token == from end
 },function(msg)
-  msg.forward(msg['X-Pool'],{Action = "Ticket-Notice",Token=msg.From})
+  local target = msg['X-Pool']
+  local tags = {Action = "Ticket-Notice",Token=msg.From}
+  -- add mining tags
+  if MINE_TOKEN and Miners[target] and Miners[target][1] > 0 then
+    tags['M-Balance'] = string.format("%.0f",Miners[target][1])
+    tags['M-Asset'] = MINE_TOKEN
+  end
+  msg.forward(target,tags)
 end)
 
 
@@ -63,6 +73,26 @@ Handlers.add("lotto-notice",{
     Balances[msg.Token] = {0,0,0}
   end
   utils.increase(Balances[msg.Token],{tonumber(msg.Amount),tonumber(msg.Amount),0})
+
+  -- send mining assests
+  if msg['M-Asset'] and msg['M-Asset'] == MINE_TOKEN and Miners[msg.From] then
+    if tonumber(msg['M-Amount']) >= 1 and tonumber(msg['M-Amount']) <= Miners[msg.From][1] then
+      Send({
+        Target = msg['M-Asset'],
+        Action = "Transfer",
+        Recipient = msg.Player,
+        Quantity = msg['M-Amount'],
+        ['X-Transfer-Type'] = "Mining",
+        ['X-Miner'] = msg.From,
+      }).onReply(function(m)
+        local q = tonumber(m.Quantity)
+        utils.decrease(Miners[msg.From],{q,q,-q})
+        if not Mined then Mined = {} end
+        utils.increase(Mined,{[m.Recipient] = q})
+      end)
+    end
+  end
+  
 end)
 
 -- This function processes the "draw-notice" action, updating the state of the pool and the player's information.
@@ -87,7 +117,7 @@ Handlers.add("draw-notice","Draw-Notice",function(msg)
         ts = msg.Timestamp
       })
     end
-    if #win_rates>0 then
+    if #win_rates>1 then
       local new_leaderboard = utils.concat(Leaderboard,win_rates)
       table.sort(new_leaderboard, function(a, b) return a.rate > b.rate end)
       if #new_leaderboard >50 then
@@ -99,6 +129,10 @@ Handlers.add("draw-notice","Draw-Notice",function(msg)
     end
   end
   utils.increase(State,{total_draws = 1})
+
+  if Pools[msg.From].mining and Pools[msg.From].mining > 0 then
+    Handlers.mine(msg.From,Pools[msg.From].mining)
+  end
 end)
 
 
@@ -129,7 +163,7 @@ Handlers.add("claim",{
       ['X-Transfer-Type'] = "Claim",
       ['X-Amount'] = string.format("%.0f", balance),
       ['X-Tax'] = string.format("%.0f", tax),
-      ['X-Tax-Rate'] = string.format("%.0f", pool.tax),
+      ['X-Tax-Rate'] = tostring(pool.tax),
       ['X-Taxer'] = TAXER or Owner,
       ['X-Pool'] = msg.Pool or pool.id
     }).onReply(function(tx)
@@ -161,6 +195,14 @@ Handlers.add("claim",{
   end
 end)
 
+Handlers.add("get-player", "Get-Player", function(msg)
+  local player = Players[msg['Player'] or msg.From]
+  if player then
+    msg.reply({Data = player})
+  end
+end)
+
+
 -- This function handles the "pools" action, sending a list of all non-hidden pools to the client.
 -- It iterates through the Pools table, adding non-hidden pools to a local table, then sorts them by their addition timestamp.
 -- Finally, it sends the sorted list back to the client.
@@ -174,7 +216,6 @@ Handlers.add("pools", "Pools", function(msg)
   table.sort(pools, function(a, b) return a.ts_added > b.ts_added end)
   msg.reply({Data = pools})
 end)
-
 
 
 
@@ -208,8 +249,7 @@ Handlers.addPool = function(pid)
       name = msg.Name or pool.name,
       currency = msg.Currency,
       logo = msg.Logo or pool.logo,
-      agent = msg.Agent or pool.agent,
-      timer = msg.Timer or pool.timer,
+      store = msg.Store or pool.store,
       tax = tonumber(msg.Tax) or pool.tax,
       price = tonumber(msg.Price) or pool.price,
       digits = tonumber(msg.Digits) or pool.digits,
@@ -225,7 +265,9 @@ Handlers.addPool = function(pid)
     if not utils.includes(msg.From,ao.authorities) then
       table.insert(ao.authorities,msg.From)
     end
+
     print(print_text)
+
   end)
 end
 
@@ -260,4 +302,27 @@ Handlers.updatePools = function(...)
       if k then Handlers.addPool(k) end
     end
   end
+end
+
+
+Handlers.mine = function(...)
+  local miner = select(1,...)
+  local productivity = select(2,...)
+  Send({
+    Target = MINE_TOKEN,
+    Action = "Mine",
+    Miner = miner,
+    Productivity = tostring(productivity)
+  }).onReply(function(m)
+    print(m.Data)
+    if not Miners[m.Miner] then Miners[m.Miner] = {0,0,0} end
+    utils.increase(Miners,{tonumber(m.Quantity),tonumber(m.Quantity),0})
+  end)
+end
+
+Handlers.addMiner = function(pool,productivity)
+  assert(Pools[pool]~=nil, "The miner must be a pool")
+  if not Miners[pool] then Miners[pool] = {0,0,0} end
+  Pools[pool].mining = productivity and math.min(productivity,1) or 1
+  print("✅ Pool [ ".. pool .. "] is a miner with productivity : "..productivity)
 end
