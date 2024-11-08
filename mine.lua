@@ -152,3 +152,12 @@ Handlers.add("add-mining-pool",{
 end)
 
 
+Handlers.add("get-dividend-snap",{
+  Action = "Get-Dividend-Snap"
+},function(msg)
+  if msg.reply then
+    msg.reply({Action="Reply-Dividend-Snap",Total=TotalSupply,Data=Balances})
+  else
+    Send({Target=msg.From,Action="Reply-Dividend-Snap",Total=TotalSupply,Data=Balances})
+  end
+end)
