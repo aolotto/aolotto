@@ -124,4 +124,9 @@ utils.query = function(self,limit,offset,sort)
   return result
 end
 
+utils.getMd4Digests = function(str)
+  local str = crypto.utils.stream.fromString(str or "aototto")
+  return crypto.digest.md4(str).asHex()
+end
+
 return utils

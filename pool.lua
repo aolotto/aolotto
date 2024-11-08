@@ -1,11 +1,9 @@
-local ao = require(".ao")
 local drive = require("modules.drive")
 local utils = require("modules.utils")
 local crypto = require(".crypto")
 
-STORE = STORE or ao.env.Process.Tags.Store or ""
-TOKEN = TOKEN or ao.env.Process.Tags.Token or ""
-MINER = MINER or ao.env.Process.Tags.Miner or ""
+STORE = STORE or ao.env.Process.Tags.Store or nil
+TOKEN = TOKEN or ao.env.Process.Tags.Token or nil
 assert(type(STORE) == "string" and string.len(STORE) == string.len(ao.id), "STORE address is incorrect.")
 assert(type(TOKEN) == "string" and string.len(TOKEN) == string.len(ao.id), "TOKEN address is incorrect.")
 
@@ -16,13 +14,10 @@ DIGITS = DIGITS or 3
 DRAW_DELAY = DRAW_DELAY or 86400000
 JACKPOT_SCALE = JACKPOT_SCALE or 0.5
 WITHDRAW_MIN = WITHDRAW_MIN or 10
+MAX_BET_COUNT = 100
 TYPE = "3D"
 
-
-
-Info = Info or {
-  id = ao.id,
-}
+Info = Info or {id = ao.id}
 State = State or {
   round = 1,
   bet = {0,0,0}, -- {quantity, amount, tickets }
@@ -43,9 +38,10 @@ Numbers = Numbers or {}
 
 
 Handlers.add('bet',{
-  Action = "Ticket-Notice",
+  Action = "Betting",
   Quantity = "%d",
   From = STORE,
+  ['X-Origin'] = TOKEN,
   ['X-Numbers'] = "_",
   ['X-Pool'] = ao.id,
 },function(msg)
@@ -54,7 +50,7 @@ Handlers.add('bet',{
 
   local x_numbers = msg['X-Numbers']
   local numbers, count = utils.parseNumberStringToBets(x_numbers,DIGITS or 3)
-  local max_count = math.floor(tonumber(msg.Quantity)/PRICE) 
+  local max_count = math.min(math.floor(tonumber(msg.Quantity)/PRICE),MAX_BET_COUNT)
   assert(max_count >=1,"Insufficient bet amount")
   
    -- If total_bets is not equal to max_bets_in_quantity, generate a random number
@@ -78,9 +74,10 @@ Handlers.add('bet',{
   utils.increase(Players[msg.Sender],{count,amount,1})
   utils.increase(Sales,{count,amount,1})
 
+
   -- Save the bet
   local bet = {
-    id = msg.Id,
+    id = msg['Pushed-For'],
     round = State.round,
     amount = amount,
     count = count,
@@ -91,21 +88,27 @@ Handlers.add('bet',{
     price = PRICE,
     token = Token.id or TOKEN,
     currency = { Token.ticker,Token.denomination,Token.logo},
-    store = msg.From
+    store = msg.From,
   }
 
-  if msg['M-Balance'] and tonumber(msg['M-Balance']) >= 1 then
-    local m_balance = tonumber(msg['M-Balance'])
-    local m_amount = math.max(m_balance / (10 ^ DIGITS) * count , 1 )
-    print('m_mount:'..m_amount)
-    bet.m_amount = m_amount
-    bet.m_asset = msg['M-Asset']
+  if State.mine and tonumber(State.mine[1])>=1 then
+    local unit_amount = tonumber(State.mine[1]) / 1000
+    local mine_amount = math.max(unit_amount * count,1)
+    bet.mine = {mine_amount,Info.mining[3]}
+    utils.decrease(State.mine,{mine_amount,0,0})
   end
 
   table.insert(Bets,bet)
+
+  if not BetsIndexer then BetsIndexer = {} end
+  BetsIndexer[bet.id] = #Bets
+
   utils.increase(State.bet,{count, amount, 1})
   utils.increase(State,{jackpot=jackpot,balance=amount})
-  utils.update(State,{ts_latest_bet = msg.Timestamp})
+  utils.update(State,{
+    ts_latest_bet = msg.Timestamp,
+    bet_hash_chain = utils.getMd4Digests((State.bet_hash_chain or "")..msg.Id)
+  })
 
   -- If the total bet amount is less than the maximum of 1000 units of bet amount or jackpot, delay the draw time
   if State.bet[2] < math.max(State.jackpot, PRICE * 10 ^ (DIGITS or 3)) then
@@ -120,27 +123,44 @@ Handlers.add('bet',{
   end
   utils.increase(Numbers,numbers)
 
-  local tags = {
-    Target = msg.From,
+  local lotto_notice = {
+    Target = bet.store or STORE,
     Action = "Lotto-Notice",
-    Player = msg.Sender,
-    Pool = ao.id,
+    Player = bet.player or msg.Sender,
     Round = string.format("%.0f", bet.round or State.round),
     Count = string.format("%.0f", count),
     Amount = string.format("%.0f", amount),
-    Store = msg.From,
     ['X-Numbers'] = x_numbers,
     Price = string.format("%.0f", PRICE),
-    Token = bet.Token or msg.Token or TOKEN or Token.id,
-    Ticket = msg.Id,
+    Token = bet.token or TOKEN or Token.id,
+    Ticket = msg['Pushed-For'],
     Currency = table.concat(bet.currency,","),
-    Data = State
+    ['Pushed-For'] = bet.pushed_for or msg['Pushed-For'],
+    Data = State,
   }
-  if bet.m_amount and bet.m_amount>=1 then
-    tags['M-Amount'] = string.format("%.0f",bet.m_amount)
-    tags['M-Asset'] = bet.m_asset
+  
+  if bet.mine then
+    local mining_msg = {
+      Target = MINER,
+      Action = "Mining",
+      Player = lotto_notice.Player,
+      ['Pushed-For'] = lotto_notice['Pushed-For'],
+      ['X-Mine-Amount'] = string.format("%.0f", bet.mine[1]),
+      ['X-Mine-Token'] = Info.mining[2],
+      ['X-Mine-Currency'] = bet.mine[2] or Info.mining[3]
+
+    }
+    lotto_notice['X-Mine-Amount'] = mining_msg['X-Mine-Amount']
+    lotto_notice['X-Mine-Token'] = mining_msg['X-Mine-Token']
+    lotto_notice['X-Mine-Currency'] = mining_msg['X-Mine-Currency']
+    
+    Send(lotto_notice)
+    Send(mining_msg).onReply(function(m)
+      State.mine = m.Data
+    end)
+  else
+    Send(lotto_notice)
   end
-  Send(tags)
 
   if State.ts_latest_draw <= msg.Timestamp then
     Handlers.archive()
@@ -151,6 +171,7 @@ end)
 
 Handlers.archive = function(...)
   if Archive == nil then
+    assert(#Bets >=1,"bets length must greater than 1.")
     assert(State.jackpot >=1,"jackpot must greater than 1.")
     State.ts_round_end = os.time()
     Archive = {
@@ -162,6 +183,7 @@ Handlers.archive = function(...)
     Players = {}
     Bets = {}
     Numbers = {}
+    BetsIndexer = {}
     local balance = State.balance - State.jackpot
     local jackpot = balance * JACKPOT_SCALE
     local round = State.round + 1
@@ -188,7 +210,7 @@ Handlers.archive = function(...)
       Round = tostring(Archive.state.round)
     },function(m)
       print("The round ["..m.Round.."] has been archived as: "..m.Id)
-      Handlers.draw(m.Id, m.Data or Archive, m['Block-Height'], m.Timestamp)
+      Handlers.draw(m.Id, Archive, m['Block-Height'], m.Timestamp)
       Archive = nil
     end)
 
@@ -196,7 +218,11 @@ Handlers.archive = function(...)
       Target = ao.id,
       Action = "Archive",
       Round = tostring(Archive.state.round),
-      Data = Archive
+      Data = {
+        state = Archive.state,
+        player = Archive.player,
+        numbers = Archive.numbers
+      }
     })
 
   end
@@ -216,7 +242,7 @@ Handlers.draw = function(...)
   local numbers = data.numbers or Archive.numbers
   local latest_bet = bets[#bets]
   local block = drive.getBlock(select(3,...) or 1520692)
-  local seed = block.hash ..'_'.. latest_bet.id ..'_'..'_'..archive_id
+  local seed = block.hash ..'_'..archive_id
   local lucky_number = utils.getDrawNumber(seed,DIGITS or 3)
   print("lucky_number:"..lucky_number)
   -- count winners and rewards
@@ -252,7 +278,6 @@ Handlers.draw = function(...)
     winners = winners,
     ts_draw = select(4,...) or os.time(),
     bet = state.bet,
-    latest_bet_id = latest_bet.id,
     block_hash = block.hash,
     currency = {Token.ticker,Token.denomination,Token.logo}
   }
@@ -267,6 +292,9 @@ Handlers.draw = function(...)
     Archive = draw.archive or archive_id,
     Token = TOKEN or Token.id,
     Currency = table.concat(draw.currency,","),
+    ['Pool-Info'] = table.concat({Info.name,Info.logo},","),
+    ['Lucky-Number'] = tostring(draw.lucky_number),
+    ['Awarded-To'] = draw.winners > 0 and tostring(draw.winners) or "1",
     ['Pool-Type'] = TYPE,
     Data = draw
   })
@@ -274,7 +302,7 @@ end
 
 
 Handlers.add("info","Info",function(msg)
-  msg.reply({
+  local message = {
     Name = Info.name or Token.ticker,
     Token = Token.id or TOKEN,
     Store = STORE,
@@ -289,7 +317,11 @@ Handlers.add("info","Info",function(msg)
     ['Jackpot-Scale'] = tostring(JACKPOT_SCALE or 0.5),
     ['Withdraw-Min'] = tostring(WITHDRAW_MIN or 1),
     Data = State
-  })
+  }
+  if Info.mining then
+    message.Mining = table.concat(Info.mining,",")
+  end
+  msg.reply(message)
 end)
 
 
@@ -311,6 +343,15 @@ Handlers.add("get",{Action = "Get"},{
 Handlers.add("numbers","Numbers",function(msg)
   msg.reply({Data = Numbers})
 end)
+
+Handlers.add("query_by_id",{Action="Query"},{
+  [{Table = "Bets",['Query-Id']="_"}] = function(msg)
+    local index = BetsIndexer[msg['Query-Id']]
+    if index ~= nil then
+      msg.reply({Data = Bets[index]})
+    end
+  end
+})
 
 
 Handlers.add('cron',"Cron",function(msg)
@@ -373,3 +414,37 @@ end
 
 
 
+
+
+Handlers.initMiningHandlers = function(miner)
+  assert(miner~=nil,"missed miner process")
+  MINER = miner
+  ao.addAssignable("assignments_from_miner",{ From = miner})
+  Handlers.add("mining-quota-added",{
+    Action = "Quota-Added",
+    From = miner,
+    Amount = "%d+"
+  },function(msg)
+    print("Added mining quota: "..msg.Amount)
+    State.mine = msg.Data
+  end)
+  print("✅ Handlers added for Mining process: "..miner)
+end
+
+Handlers.add("mining-pool-added",{
+  From = STORE,
+  Action = "Mining-Pool-Added"
+},function(msg)
+  MINER = msg['X-Origin'] or msg.Token
+  Handlers.initMiningHandlers(MINER,STORE)
+  Info.mining = {tonumber(msg.Productivity), MINER, msg.Currency}
+  State.mine = msg.Data
+end)
+
+if MINER then Handlers.initMiningHandlers(MINER) end
+
+
+
+Handlers.test = function(...)
+  print(utils.getMd4Digests(select(1,...)))
+end

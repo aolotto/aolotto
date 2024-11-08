@@ -55,12 +55,12 @@ local utils = {
 Variant = "0.0.3"
 
 -- token should be idempotent and not change previous state updates
-Denomination = Denomination or 12
+Denomination = Denomination or ao.env.Process.Tags.Denomination or 12
 Balances = Balances or { [ao.id] = utils.toBalanceValue(10000 * 10 ^ Denomination) }
 TotalSupply = TotalSupply or utils.toBalanceValue(10000 * 10 ^ Denomination)
 Name = Name or 'Aolotto Test token'
-Ticker = Ticker or 'TALT'
-Logo = Logo or 'Pgcwy3W4emNSod-BcFWWNZT1ASAKcEuTDJxN81Aj7Hs'
+Ticker = Ticker or ao.env.Process.Tags.Ticker or 'TALT'
+Logo = Logo or ao.env.Process.Tags.Logo or 'Pgcwy3W4emNSod-BcFWWNZT1ASAKcEuTDJxN81Aj7Hs'
 
 --[[
      Add handlers for each incoming Action defined by the ao Standard Token Specification

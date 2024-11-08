@@ -20,21 +20,14 @@ Mined = Mined or {}
 -- It checks if the pool exists and if the quantity is within the pool's price range.
 -- It also verifies if the 'From' field matches the token of the pool.
 -- If all conditions are met, it forwards the ticket to the pool with a 'Ticket-Notice' action.
-Handlers.add("forward-ticket",{
+Handlers.add("assign-ticket",{
   Action = "Credit-Notice",
   Quantity = "%d+",
   ['X-Pool'] = function(pid,m) return Pools[pid]~= nil and Pools[pid].price <= tonumber(m.Quantity) end,
   ['X-Numbers'] = "_",
   From = function(from,m) return Pools[m['X-Pool']].token == from end
 },function(msg)
-  local target = msg['X-Pool']
-  local tags = {Action = "Ticket-Notice",Token=msg.From}
-  -- add mining tags
-  if MINE_TOKEN and Miners[target] and Miners[target][1] > 0 then
-    tags['M-Balance'] = string.format("%.0f",Miners[target][1])
-    tags['M-Asset'] = MINE_TOKEN
-  end
-  msg.forward(target,tags)
+  msg.forward(msg['X-Pool'],{Action="Betting"})
 end)
 
 
@@ -44,28 +37,21 @@ Handlers.add("lotto-notice",{
   Action = "Lotto-Notice",
   From = function(from) return Pools[from]~=nil end,
   Player = "_",
-  Pool = "_",
   Round = "%d+",
   Count = "%d+",
   Amount = "%d+",
   ['X-Numbers'] = "_",
   Price = "%d+",
-  Token = "_",
-  Currency = "_",
-  Ticket = "_"
 },function(msg)
-
   Pools[msg.From].state = msg.Data
   -- if not the player then create a new player.
   if not Players[msg.Player] then
     Players[msg.Player] = {}
     utils.increase(State,{total_players=1})
   end
-
   if not Players[msg.Player][msg.From] then 
     Players[msg.Player][msg.From] = {0,0,0,0,0} -- count,amount,tickets,rewarded,balance 
   end
-
   utils.increase(Players[msg.Player][msg.From],{tonumber(msg.Count),tonumber(msg.Amount),1,0,0})
   utils.increase(State,{total_tickets=1})
   utils.increase(Pools[msg.From].sold,{tonumber(msg.Count),tonumber(msg.Amount),1})
@@ -73,26 +59,6 @@ Handlers.add("lotto-notice",{
     Balances[msg.Token] = {0,0,0}
   end
   utils.increase(Balances[msg.Token],{tonumber(msg.Amount),tonumber(msg.Amount),0})
-
-  -- send mining assests
-  if msg['M-Asset'] and msg['M-Asset'] == MINE_TOKEN and Miners[msg.From] then
-    if tonumber(msg['M-Amount']) >= 1 and tonumber(msg['M-Amount']) <= Miners[msg.From][1] then
-      Send({
-        Target = msg['M-Asset'],
-        Action = "Transfer",
-        Recipient = msg.Player,
-        Quantity = msg['M-Amount'],
-        ['X-Transfer-Type'] = "Mining",
-        ['X-Miner'] = msg.From,
-      }).onReply(function(m)
-        local q = tonumber(m.Quantity)
-        utils.decrease(Miners[msg.From],{q,q,-q})
-        if not Mined then Mined = {} end
-        utils.increase(Mined,{[m.Recipient] = q})
-      end)
-    end
-  end
-  
 end)
 
 -- This function processes the "draw-notice" action, updating the state of the pool and the player's information.
@@ -129,10 +95,11 @@ Handlers.add("draw-notice","Draw-Notice",function(msg)
     end
   end
   utils.increase(State,{total_draws = 1})
-
-  if Pools[msg.From].mining and Pools[msg.From].mining > 0 then
-    Handlers.mine(msg.From,Pools[msg.From].mining)
+  -- if the pool in mining plan ,forward the message to the mining process
+  if Pools[msg.From].mining then
+    msg.forward(Pools[msg.From].mining,{Action="Quota-Requsting"})
   end
+
 end)
 
 
@@ -149,11 +116,9 @@ Handlers.add("claim",{
   local stat = player and player[msg.Pool] or nil
   local balance = stat and stat[5] or 0
   assert(balance >= math.max(pool.withdraw_min,10),"Insufficient amount to claim.")
-  local tax = balance * math.max(pool.tax,0.1)
-  local user_quantity = balance - tax
-  
+
   if balance >= math.max(pool.withdraw_min,10) then
-    local tax = balance * pool.tax
+    local tax = balance * math.max(pool.tax,0.1)
     local quantity = balance - tax
     Send({
       Target = pool.token,
@@ -165,30 +130,32 @@ Handlers.add("claim",{
       ['X-Tax'] = string.format("%.0f", tax),
       ['X-Tax-Rate'] = tostring(pool.tax),
       ['X-Taxer'] = TAXER or Owner,
-      ['X-Pool'] = msg.Pool or pool.id
+      ['X-Pool'] = msg.Pool or pool.id,
+      ['X-Currency'] = pool.currency
     }).onReply(function(tx)
       if tx.Action == "Debit-Notice" then
+        local quantity = tonumber(tx['Quantity'])
         local amount = tonumber(tx['X-Amount'])
         local player_id = tx.Recipient or msg.From
         local pool_id = tx['X-Pool']
         if Players[player_id] and Players[player_id][pool_id] then
           utils.decrease(Players[player_id][pool_id],{0,0,0,0,amount})
         end
-        if Balances[tx.From] then
-          utils.decrease(Balances[tx.From],{amount,0,-amount})
-          utils.increase(State,{total_cliams=1})
-          Taxation = Taxation or {}
-          if not Taxation[tx.From] then Taxation[tx.From] = {0,0,0} end
-          local tax_amount = tonumber(tx['X-Tax'])
-          utils.increase(Taxation[tx.From],{tax_amount,tax_amount,0})
-        end
+        if not Balances[tx.From] then Balances[tx.From] = {0,0,0} end
+        utils.decrease(Balances[tx.From],{quantity,0,-quantity})
+        utils.increase(State,{total_cliams=1})
+        if not Taxation then Taxation = {} end
+        if not Taxation[tx.From] then Taxation[tx.From] = {0,0,0} end
+        local tax_amount = tonumber(tx['X-Tax'])
+        utils.increase(Taxation[tx.From],{tax_amount,tax_amount,0})
       else
-        FailedTransactions = FailedTransactions or {}
+        if not FailedTransactions then FailedTransactions = {} end
         table.insert(FailedTransactions,{
           id=tx.Id,type=tx['X-Transfer-Type'],
           quantity=tx.Quantity,
           recipient = tx.Recipient,
-          ts_created = tx.Timestamp})
+          ts_created = tx.Timestamp
+        })
         print("Player fails to claim prize")
       end
     end)
@@ -199,6 +166,19 @@ Handlers.add("get-player", "Get-Player", function(msg)
   local player = Players[msg['Player'] or msg.From]
   if player then
     msg.reply({Data = player})
+  end
+end)
+
+Handlers.add("get-miner",{
+  Action = "Get-Miner",
+  Miner = "_"
+}, function(msg)
+  if Miners[msg.Miner] then
+    msg.reply({
+      Miner = msg.Miner,
+      ['M-Asset'] = MINE_TOKEN,
+      Data = Miners[msg.Miner]
+    })
   end
 end)
 
@@ -216,6 +196,12 @@ Handlers.add("pools", "Pools", function(msg)
   table.sort(pools, function(a, b) return a.ts_added > b.ts_added end)
   msg.reply({Data = pools})
 end)
+
+
+Handlers.add("leaderborad","Leaderboard",function(msg)
+  msg.reply({Data = Leaderboard})
+end)
+
 
 
 
@@ -305,24 +291,24 @@ Handlers.updatePools = function(...)
 end
 
 
-Handlers.mine = function(...)
-  local miner = select(1,...)
-  local productivity = select(2,...)
-  Send({
-    Target = MINE_TOKEN,
-    Action = "Mine",
-    Miner = miner,
-    Productivity = tostring(productivity)
-  }).onReply(function(m)
-    print(m.Data)
-    if not Miners[m.Miner] then Miners[m.Miner] = {0,0,0} end
-    utils.increase(Miners,{tonumber(m.Quantity),tonumber(m.Quantity),0})
-  end)
+Handlers.initMiningHandlers = function(mining_token)
+  assert(mining_token ~= nil, "missed then mining token process.")
+  MINE_TOKEN = mining_token
+  Handlers.addMiner = function(pool,productivity)
+    assert(Pools[pool]~=nil, "The miner must be a pool")
+    assert(productivity~=nil, "Missed productivity")
+    Send({
+      Target = MINE_TOKEN,
+      Action = "Add-Mining-Pool",
+      Pool = pool,
+      Productivity = tostring(productivity)
+    }).onReply(function(m)
+      print("✅ Miner added!")
+      Pools[m.Pool].mining = m.From
+      m.forward(m.Pool)
+    end)
+  end
+  print("✅ Handlers are added for the mining process: "..MINE_TOKEN)
 end
 
-Handlers.addMiner = function(pool,productivity)
-  assert(Pools[pool]~=nil, "The miner must be a pool")
-  if not Miners[pool] then Miners[pool] = {0,0,0} end
-  Pools[pool].mining = productivity and math.min(productivity,1) or 1
-  print("✅ Pool [ ".. pool .. "] is a miner with productivity : "..productivity)
-end
+if MINE_TOKEN then Handlers.initMiningHandlers(MINE_TOKEN) end
