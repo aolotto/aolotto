@@ -307,6 +307,9 @@ Handlers.add("Cron",function(msg)
   if msg.Timestamp >= State.ts_latest_draw and State.ts_latest_draw > 0 and #Bets > 0 then
     Handlers.archive()
   end
+  if Handlers.shareTaxation and Taxation[1] >= 100000000 then
+    Handlers.shareTaxation(Taxation[1])
+  end
 end)
 
 
@@ -401,8 +404,6 @@ Handlers.draw = function(archive)
   else
     rewards[latest_bet.player] = jackpot
   end
-
-  print(rewards)
 
   -- count winners and send Win-Notice to user
   local winners = 0
@@ -655,9 +656,7 @@ if AGENT and TOKEN then
     ['X-Distribution-From'] = ao.id
   },function(msg)
     if Players[msg.Recipient] then
-      print("处理用户div:"..msg.Recipient..">"..msg.Quantity)
-      -- utils.increase(Players[msg.Recipient],{div=tonumber(msg.Quantity)})
+      utils.increase(Players[msg.Recipient],{div=tonumber(msg.Quantity)})
     end
-    
   end)
 end
