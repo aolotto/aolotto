@@ -62,7 +62,7 @@ utils.increase = function(targetTable, fields)
           end
           increase(targetTable[key], value)
       else
-          targetTable[key] = (targetTable[key] or 0) + value
+          targetTable[key] = tonumber(targetTable[key] or 0) + tonumber(value)
       end
   end
 end
@@ -76,7 +76,7 @@ utils.decrease = function(targetTable, fields)
           end
           decrease(targetTable[key], value)
       else
-          targetTable[key] = (targetTable[key] or 0) - value
+          targetTable[key] = tonumber(targetTable[key] or 0) - tonumber(value)
       end
   end
 end
@@ -128,5 +128,7 @@ utils.getMd4Digests = function(str)
   local str = crypto.utils.stream.fromString(str or "aototto")
   return crypto.digest.md4(str).asHex()
 end
+
+
 
 return utils
