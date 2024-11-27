@@ -26,12 +26,10 @@ local utils = {
 
 TOKEN = TOKEN or "KCAqEdXfGoWZNhtgPRIL0yGgWlCDUl0gvHu8dnE5EJs"
 MaxSupply = MaxSupply or string.format("%.0f",210000000 * 10 ^ Denomination)
--- TotalSold = TotalSold or "0"
+
 TotalMined = TotalMined or "0"
 TotalQuota = TotalQuota or "0"
--- Profits = Profits or {"0","0","0"}
 Pools = Pools or {}
--- Minings = Minings or {}
 
 
 Handlers.add("bet_and_mine",{
@@ -98,6 +96,25 @@ Handlers.add("claiming",{
       m.forward(msg.From)
     end
   end)
+end)
+
+Handlers.add("distribute",{
+  Action = "Distribute",
+  From = function(_from) return Pools[_from] ~= nil end,
+  Amount = "%d+",
+  Token = TOKEN
+},function(msg)
+  local _total, _count = Handlers.share(msg.Amount,msg.Id,msg.Token,msg.From)
+  msg.reply({
+    Action = "Distributed",
+    Amount = tostring(_total),
+    Count = tostring(_count),
+    Token = msg.Token or TOKEN,
+    Denomination = msg.Denomination,
+    Ticker = msg.Ticker,
+    ['Distribution-Ref'] = msg['Distribution-Ref'],
+    Data = "Successfully distributed ".._total.." to ".._count.." addresses"
+  })
 end)
 
 
@@ -179,7 +196,64 @@ Handlers.computeBets = function(quantity,price)
 end
 
 
-Handlers.test =function(a,b)
-  local c = math.max(utils.divisible(a,b),"8000000")
-  print(c)
+Handlers.share = function(amount,id,token,from)
+  local _snap_supply = TotalSupply
+  local _snap_balances = Balances
+  local _unit_share = utils.toNumber(amount) / utils.toNumber(_snap_supply)
+  local _total = 0
+  local _count = 0
+  for k,v in pairs(_snap_balances) do
+    if tonumber(v) > 0 then
+      local _div = math.floor(_unit_share * utils.toNumber(v))
+      _total = _total + _div 
+      _count = _count + 1
+      local tx = {
+        Target = token or TOKEN,
+        Action = "Transfer",
+        Quantity = string.format("%.0f",_div),
+        Recipient = k,
+        ['X-Transfer-Type'] = "Distribution",
+        ['X-Amount'] = amount,
+        ['X-Distribution-Id'] = id,
+        ['X-Unit-Share'] = string.format("%.f",_unit_share),
+        ['X-Snap-Totalsupply'] = _snap_supply,
+        ['X-Snap-Balance'] = v,
+        ['X-Distribution-From'] = from
+      }
+      Send(tx).onReply(function(msg)
+        Assign({
+          Processes = { msg['X-Distribution-From'] },
+          Message = msg.Id
+        })
+      end)
+    end
+  end
+  return _total,_count
+end
+
+
+Handlers.fetchBalanceByTokenId = function(token,fn)
+  Send({
+    Target = TOKEN,
+    Action = "Balance"
+  })
+  .onReply(function(m)
+    if not Tokens then Tokens = {} end
+    if not Tokens[m.From] then Tokens[m.From] = {} end
+    Tokens[m.From].balance = m.Balance
+    Tokens[m.From].id = m.From
+    Tokens[m.From].ticker = m.Ticker
+    if fn and type(fn) == "function" then
+      fn(m.Balance,Tokens[m.From])
+    end
+  end)
+end
+
+
+Handlers.test = function(msg)
+  local _msg = msg or Inbox[8]
+  Assign({
+    Processes = { _msg['X-Distribution-From'] },
+    Message = _msg.Id
+  })
 end

@@ -303,6 +303,13 @@ Handlers.add("query",{Action="Query"},{
   end
 })
 
+Handlers.add("Cron",function(msg)
+  if msg.Timestamp >= State.ts_latest_draw and State.ts_latest_draw > 0 and #Bets > 0 then
+    Handlers.archive()
+  end
+end)
+
+
 Handlers.archive = function()
   if not Archive then
     assert(#Bets >=1,"bets length must greater than 1.")
@@ -608,11 +615,49 @@ Handlers.claim = function(claim)
   })
 end
 
-Handlers.add("Cron",function(msg)
-  if msg.Timestamp >= State.ts_latest_draw and State.ts_latest_draw > 0 and #Bets > 0 then
-    Handlers.archive()
+
+
+
+if AGENT and TOKEN then
+  ao.addAssignable(AGENT,{From=AGENT})
+  ao.addAssignable(TOKEN.."-Debit-Notice",{From=TOKEN,Action = "Debit-Notice"})
+
+  Handlers.shareTaxation = function(amount)
+    assert(Taxation[1] > 1000000,"Distribution amount must be greater than 1")
+    local _amount = amount or Taxation[1]
+    if not DIV_REF then DIV_REF = 1 end
+    local message = {
+      Target = AGENT,
+      Action = "Distribute",
+      Amount = string.format("%.0f",_amount),
+      Token = TOKEN,
+      Denomination = tostring(Token.denomination),
+      Ticker = Token.ticker,
+      ['Distribution-Ref'] = tostring(DIV_REF)
+    }
+    Send(message).onReply(function(msg)
+      local _dis_amount = tonumber(msg.Amount)
+      utils.decrease(Taxation,{_dis_amount,0,-_dis_amount})
+      utils.decrease(Funds,{_dis_amount,0,-_dis_amount})
+      utils.increase(Stats,{
+        total_distribute_count = 1,
+        total_distribute_amount = _dis_amount
+      })
+      DIV_REF = DIV_REF + 1
+    end)
   end
-end)
 
-
-
+  Handlers.add("log-user-div",{
+    From = TOKEN,
+    Target = AGENT,
+    Action = "Debit-Notice",
+    ['X-Transfer-Type'] = "Distribution",
+    ['X-Distribution-From'] = ao.id
+  },function(msg)
+    if Players[msg.Recipient] then
+      print("处理用户div:"..msg.Recipient..">"..msg.Quantity)
+      -- utils.increase(Players[msg.Recipient],{div=tonumber(msg.Quantity)})
+    end
+    
+  end)
+end

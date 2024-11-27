@@ -1,2 +1,2 @@
 # aolotto
-aolotto is a lottery game run on thAoComputer. ar://aolotto
+aolotto is a lottery game running on theAoComputer. ar://aolotto
